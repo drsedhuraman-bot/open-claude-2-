@@ -1,0 +1,9 @@
+python-binance
+rich
+pandas
+numpy
+pandas-ta
+python-dotenv
+prompt_toolkit
+websockets
+aiohttp

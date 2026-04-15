@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Binance Terminal</title>
+<style>
+/* ── Tokens ──────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0d1117; --surf:#161b22; --surf2:#1c2128; --border:#30363d;
+  --text:#e6edf3; --muted:#8b949e; --accent:#f9c74f;
+  --green:#3fb950; --red:#f85149; --blue:#58a6ff;
+  --purple:#d2a8ff; --orange:#ffa657;
+  --hdr:52px; --log:110px; --left:252px; --right:258px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;overflow:hidden;}
+body{
+  background:var(--bg);color:var(--text);
+  font-family:'Segoe UI',system-ui,monospace;font-size:13px;
+  display:grid;
+  grid-template-rows:var(--hdr) 1fr var(--log);
+  grid-template-columns:var(--left) 1fr var(--right);
+  grid-template-areas:
+    "hdr hdr hdr"
+    "lft ctr rgt"
+    "log log log";
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:5px;height:5px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+
+/* ── Header ── */
+#hdr{
+  grid-area:hdr;
+  background:var(--surf);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:12px;padding:0 16px;
+  overflow:hidden;
+}
+#hdr h1{color:var(--accent);font-size:14px;letter-spacing:1px;white-space:nowrap;}
+.net-badge{
+  background:#1f2937;border:1px solid var(--border);border-radius:4px;
+  padding:1px 7px;font-size:10px;color:var(--orange);white-space:nowrap;
+}
+#hdr-price{font-size:20px;font-weight:700;color:var(--accent);}
+#hdr-change{font-size:12px;margin-left:2px;}
+
+.hdr-pill{
+  display:flex;align-items:center;gap:6px;
+  background:var(--surf2);border:1px solid var(--border);border-radius:20px;
+  padding:3px 10px;font-size:11px;white-space:nowrap;
+}
+.hdr-pill .dot{width:7px;height:7px;border-radius:50%;background:var(--border);}
+.hdr-pill .dot.green{background:var(--green);}
+.hdr-pill .dot.orange{background:var(--orange);animation:pulse 1.2s infinite;}
+.hdr-pill .dot.red{background:var(--red);}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+
+#hdr-meta{font-size:10px;color:var(--muted);margin-left:auto;white-space:nowrap;}
+
+/* ── Panels ── */
+#lft,#ctr,#rgt{overflow-y:auto;padding:10px;}
+#lft{grid-area:lft;border-right:1px solid var(--border);}
+#ctr{grid-area:ctr;}
+#rgt{grid-area:rgt;border-left:1px solid var(--border);}
+
+/* ── Log ── */
+#log{
+  grid-area:log;
+  background:#0a0e13;border-top:1px solid var(--border);
+  padding:6px 12px;overflow-y:auto;
+  font-family:monospace;font-size:11px;line-height:1.55;
+}
+.ll{padding:1px 0;}
+.ll .lt{color:var(--muted);margin-right:5px;}
+
+/* ── Card ── */
+.card{
+  background:var(--surf);border:1px solid var(--border);border-radius:7px;
+  padding:10px 12px;margin-bottom:8px;
+}
+.card-t{
+  font-size:10px;color:var(--blue);font-weight:600;
+  text-transform:uppercase;letter-spacing:.5px;
+  border-bottom:1px solid var(--border);padding-bottom:5px;margin-bottom:8px;
+  display:flex;align-items:center;justify-content:space-between;
+}
+
+/* ── Form elements ── */
+label{display:block;color:var(--muted);font-size:10px;margin-bottom:2px;}
+input,select{
+  width:100%;background:#0d1117;border:1px solid var(--border);border-radius:5px;
+  color:var(--text);padding:5px 8px;font-size:12px;margin-bottom:6px;outline:none;
+}
+input:focus,select:focus{border-color:var(--blue);}
+input[type="checkbox"]{width:auto;margin-bottom:0;}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.form-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;}
+
+/* ── Buttons ── */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:4px;
+  padding:6px 12px;border-radius:5px;border:none;cursor:pointer;
+  font-size:12px;font-weight:500;transition:opacity .15s;white-space:nowrap;
+}
+.btn:hover{opacity:.82;}
+.btn:disabled{opacity:.35;cursor:not-allowed;}
+.btn-g {background:var(--green); color:#000;}
+.btn-r {background:var(--red);   color:#fff;}
+.btn-b {background:var(--blue);  color:#000;}
+.btn-o {background:var(--orange);color:#000;}
+.btn-m {background:#21262d;      color:var(--text);}
+.btn-a {background:var(--accent);color:#000;}
+.btn-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;}
+.btn-full{width:100%;margin-bottom:6px;}
+
+/* ── Preset buttons ── */
+.presets{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;}
+.pb{
+  padding:2px 8px;border-radius:3px;border:1px solid var(--border);
+  background:transparent;color:var(--muted);cursor:pointer;font-size:10px;
+  transition:all .12s;
+}
+.pb:hover,.pb.on{background:var(--accent);color:#000;border-color:var(--accent);}
+
+/* ── Stats ── */
+.stats{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:12px;}
+.sl{color:var(--muted);white-space:nowrap;}
+.sv{color:var(--text);font-weight:500;}
+
+/* ── Colors ── */
+.g{color:var(--green);}
+.r{color:var(--red);}
+.y{color:var(--accent);}
+.mu{color:var(--muted);}
+.bl{color:var(--blue);}
+
+/* ── Verdict ── */
+#verdict-wrap{text-align:center;padding:8px 0 4px;}
+#verdict-badge{
+  display:inline-block;padding:5px 20px;border-radius:20px;
+  font-size:18px;font-weight:800;letter-spacing:1.5px;
+}
+.vl{background:rgba(63,185,80,.12);color:var(--green);border:1.5px solid var(--green);}
+.vs{background:rgba(248,81,73,.12); color:var(--red);  border:1.5px solid var(--red);}
+.vh{background:rgba(139,148,158,.1);color:var(--muted);border:1.5px solid var(--border);}
+.score-row{display:flex;align-items:center;gap:6px;margin:4px 0;}
+.score-bar{flex:1;height:6px;border-radius:3px;background:var(--border);overflow:hidden;}
+.sf-g{height:100%;background:var(--green);transition:width .4s;}
+.sf-r{height:100%;background:var(--red);  transition:width .4s;}
+
+/* ── 8-condition mosaic ── */
+#mosaic{
+  display:grid;grid-template-columns:1fr 1fr;gap:6px;
+}
+.cond{
+  background:#0d1117;border:1px solid var(--border);border-radius:5px;
+  padding:8px 10px;cursor:default;
+}
+.cond.cb{border-color:var(--green);}
+.cond.cr{border-color:var(--red);}
+.cn{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+.cl{font-size:12px;font-weight:600;margin:2px 0;}
+.cd{font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cp{font-size:10px;}
+
+/* ── Indicator bar ── */
+#ind-bar{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:8px;
+}
+.ind-box{
+  background:var(--surf2);border:1px solid var(--border);border-radius:5px;
+  padding:5px 7px;text-align:center;
+}
+.ind-lbl{font-size:9px;color:var(--muted);}
+.ind-val{font-size:12px;font-weight:600;}
+
+/* ── Level boxes ── */
+.levels{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:8px;}
+.lvl{
+  background:var(--surf2);border:1px solid var(--border);border-radius:5px;
+  padding:5px 6px;text-align:center;
+}
+.ll2{font-size:9px;color:var(--muted);}
+.lv{font-size:12px;font-weight:600;}
+
+/* ── Position card ── */
+#pos-card{background:var(--surf2);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px;}
+.pos-row{display:flex;justify-content:space-between;margin-bottom:3px;font-size:12px;}
+
+/* ── Trades table ── */
+table{width:100%;border-collapse:collapse;font-size:11px;}
+th{color:var(--muted);text-align:left;padding:4px 6px;border-bottom:1px solid var(--border);font-weight:500;}
+td{padding:4px 6px;border-bottom:1px solid #21262d;}
+tr:hover td{background:var(--surf2);}
+
+/* ── Circuit breaker toggle ── */
+.cb-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+.cb-row label{margin:0;font-size:12px;color:var(--text);}
+
+/* ── Modal ── */
+#modal-overlay{
+  display:none;position:fixed;inset:0;
+  background:rgba(0,0,0,.72);z-index:200;
+  align-items:center;justify-content:center;
+}
+#modal-overlay.open{display:flex;}
+#modal-box{
+  background:var(--surf);border:1px solid var(--border);border-radius:10px;
+  padding:22px;min-width:320px;max-width:500px;max-height:80vh;overflow-y:auto;
+}
+#modal-title{font-size:14px;font-weight:600;color:var(--accent);margin-bottom:10px;}
+#modal-body{color:var(--text);margin-bottom:16px;line-height:1.55;}
+#modal-btns{display:flex;gap:8px;justify-content:flex-end;}
+
+/* ── Backtest modal ── */
+.bt-summary{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:12px;margin-bottom:10px;}
+.bt-label{color:var(--muted);}
+
+/* ── Responsive ── */
+@media(max-width:900px){
+  body{
+    grid-template-columns:1fr;
+    grid-template-rows:var(--hdr) auto auto auto var(--log);
+    grid-template-areas:"hdr" "lft" "ctr" "rgt" "log";
+    overflow-y:auto;height:auto;
+  }
+  #lft,#ctr,#rgt{border:none;border-bottom:1px solid var(--border);}
+  #mosaic{grid-template-columns:1fr 1fr;}
+  html,body{overflow:auto;}
+}
+</style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header id="hdr">
+  <h1>⚡ BINANCE TERMINAL</h1>
+  <span class="net-badge" id="net-badge">TESTNET</span>
+  <span id="hdr-price">—</span>
+  <span id="hdr-change"></span>
+
+  <!-- Bot state pill -->
+  <div class="hdr-pill" id="bot-pill">
+    <div class="dot" id="bot-dot"></div>
+    <span id="bot-pill-text">IDLE</span>
+  </div>
+
+  <!-- Quick actions -->
+  <button class="btn btn-g" id="hdr-start" onclick="startScalpBot()" style="padding:4px 10px;font-size:11px;">▶ Start Bot</button>
+  <button class="btn btn-r" id="hdr-stop"  onclick="stopScalpBot()"  style="padding:4px 10px;font-size:11px;" disabled>■ Stop</button>
+  <button class="btn btn-m" onclick="openBacktest()"                  style="padding:4px 10px;font-size:11px;">Backtest</button>
+  <button class="btn btn-m" onclick="openManualOrder()"               style="padding:4px 10px;font-size:11px;">Manual Order</button>
+
+  <!-- Connection -->
+  <div class="hdr-pill" style="margin-left:auto;" id="conn-pill">
+    <div class="dot" id="conn-dot"></div>
+    <span id="conn-text">Connecting…</span>
+  </div>
+  <div id="hdr-meta"></div>
+</header>
+
+<!-- ── Left Panel: Config + Controls ── -->
+<aside id="lft">
+
+  <!-- Scan config -->
+  <div class="card">
+    <div class="card-t">Scalp Config</div>
+
+    <label>Symbol</label>
+    <input id="c-symbol" value="BTCUSDT" oninput="this.value=this.value.toUpperCase()" style="margin-bottom:4px;"/>
+
+    <div class="form-row">
+      <div><label>Interval</label>
+        <select id="c-interval">
+          <option value="1m">1m</option><option value="3m">3m</option>
+          <option value="5m" selected>5m</option><option value="15m">15m</option>
+          <option value="30m">30m</option><option value="1h">1h</option>
+        </select>
+      </div>
+      <div><label>Scan every (s)</label>
+        <input id="c-scan" value="30" type="number" min="10" max="300"/>
+      </div>
+    </div>
+
+    <label>Preset</label>
+    <div class="presets" id="preset-btns"></div>
+  </div>
+
+  <!-- Trade config -->
+  <div class="card">
+    <div class="card-t">Trade Config</div>
+
+    <div class="form-row">
+      <div><label>Amount USDT</label>
+        <input id="c-amount" value="50" type="number" min="1"/>
+      </div>
+      <div><label>Max daily trades</label>
+        <input id="c-max-dt" value="10" type="number" min="1"/>
+      </div>
+    </div>
+    <div class="form-row3">
+      <div><label>SL ATR×</label>
+        <input id="c-sl" value="1.0" type="number" step="0.1"/>
+      </div>
+      <div><label>T1 ATR×</label>
+        <input id="c-t1" value="1.5" type="number" step="0.1"/>
+      </div>
+      <div><label>T2 ATR×</label>
+        <input id="c-t2" value="3.0" type="number" step="0.1"/>
+      </div>
+    </div>
+    <div class="form-row">
+      <div><label>Daily loss % limit</label>
+        <input id="c-maxloss" value="5.0" type="number" step="0.5"/>
+      </div>
+      <div><label>Cooldown (s)</label>
+        <input id="c-cool" value="60" type="number" min="0"/>
+      </div>
+    </div>
+
+    <div class="cb-row">
+      <label for="c-autotrade">Auto-Trade (place real orders)</label>
+      <input type="checkbox" id="c-autotrade" style="width:auto;cursor:pointer;"/>
+    </div>
+  </div>
+
+  <!-- Bot session stats -->
+  <div class="card">
+    <div class="card-t">Session Stats</div>
+    <div class="stats">
+      <span class="sl">Status</span>    <span class="sv" id="ss-running">STOPPED</span>
+      <span class="sl">Last scan</span> <span class="sv" id="ss-scan">—</span>
+      <span class="sl">In position</span><span class="sv" id="ss-pos">No</span>
+      <span class="sl">Daily trades</span><span class="sv" id="ss-dt">0</span>
+      <span class="sl">Daily PnL</span> <span class="sv" id="ss-dpnl">0.00%</span>
+      <span class="sl">Total trades</span><span class="sv" id="ss-tt">0</span>
+      <span class="sl">Total PnL</span> <span class="sv" id="ss-tpnl">0.00%</span>
+    </div>
+    <div style="margin-top:8px;">
+      <button class="btn btn-r btn-full" id="close-pos-btn" onclick="closePosition()" disabled>
+        Close Position Now
+      </button>
+    </div>
+  </div>
+
+  <!-- Portfolio -->
+  <div class="card">
+    <div class="card-t">Portfolio
+      <button class="btn btn-m" style="padding:2px 7px;font-size:10px;" onclick="loadBalances()">↻</button>
+    </div>
+    <table id="bal-table">
+      <thead><tr><th>Asset</th><th>Free</th><th>Total</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+</aside>
+
+<!-- ── Center Panel: Live Engine View ── -->
+<main id="ctr">
+
+  <!-- Indicator bar -->
+  <div id="ind-bar">
+    <div class="ind-box"><div class="ind-lbl">RSI</div><div class="ind-val" id="i-rsi">—</div></div>
+    <div class="ind-box"><div class="ind-lbl">Stoch K/D</div><div class="ind-val" id="i-stoch">—</div></div>
+    <div class="ind-box"><div class="ind-lbl">MACD hist</div><div class="ind-val" id="i-macd">—</div></div>
+    <div class="ind-box"><div class="ind-lbl">BB %</div><div class="ind-val" id="i-bb">—</div></div>
+    <div class="ind-box"><div class="ind-lbl">Vol ratio</div><div class="ind-val" id="i-vol">—</div></div>
+    <div class="ind-box"><div class="ind-lbl">VWAP</div><div class="ind-val" id="i-vwap">—</div></div>
+    <div class="ind-box"><div class="ind-lbl">ATR</div><div class="ind-val" id="i-atr">—</div></div>
+    <div class="ind-box"><div class="ind-lbl">24h Change</div><div class="ind-val" id="i-chg">—</div></div>
+  </div>
+
+  <!-- 8-Condition Mosaic -->
+  <div class="card" style="margin-bottom:8px;">
+    <div class="card-t">8-Condition Engine
+      <span id="mosaic-ts" style="font-size:10px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;">—</span>
+    </div>
+    <div id="mosaic"></div>
+  </div>
+
+  <!-- Open Position -->
+  <div class="card" id="pos-card-wrap" style="display:none;">
+    <div class="card-t" style="color:var(--orange);">Open Position</div>
+    <div id="pos-card">
+      <div class="pos-row"><span class="mu">Symbol</span><span id="p-sym" class="y">—</span></div>
+      <div class="pos-row"><span class="mu">Entry</span><span id="p-entry">—</span></div>
+      <div class="pos-row"><span class="mu">Current</span><span id="p-cur">—</span></div>
+      <div class="pos-row"><span class="mu">Unrealized PnL</span><span id="p-upnl">—</span></div>
+      <div class="pos-row"><span class="mu">Stop</span><span id="p-stop" class="r">—</span></div>
+      <div class="pos-row"><span class="mu">T1</span><span id="p-t1" class="g">—</span></div>
+      <div class="pos-row"><span class="mu">T2</span><span id="p-t2" class="g">—</span></div>
+      <div class="pos-row"><span class="mu">Qty</span><span id="p-qty" class="mu">—</span></div>
+      <div class="pos-row"><span class="mu">Since</span><span id="p-since" class="mu">—</span></div>
+    </div>
+  </div>
+
+  <!-- Recent Scalp Trades -->
+  <div class="card">
+    <div class="card-t">Scalp Trades
+      <button class="btn btn-m" style="padding:2px 7px;font-size:10px;" onclick="loadScalpTrades()">↻</button>
+    </div>
+    <div style="overflow-x:auto;">
+      <table id="scalp-trade-table">
+        <thead><tr><th>Time</th><th>Side</th><th>Entry</th><th>Exit</th><th>PnL %</th><th>Reason</th></tr></thead>
+        <tbody><tr><td colspan="6" class="mu" style="text-align:center;">No trades yet</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<!-- ── Right Panel: Verdict + Levels ── -->
+<aside id="rgt">
+
+  <!-- Verdict -->
+  <div class="card">
+    <div class="card-t">Verdict</div>
+    <div id="verdict-wrap">
+      <div id="verdict-badge" class="vh">HOLD</div>
+      <div style="margin-top:8px;font-size:11px;color:var(--muted);">
+        <span class="g">Bull</span> <b id="v-bull">0.0</b> &nbsp;/&nbsp;
+        <span class="r">Bear</span> <b id="v-bear">0.0</b> pts
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px;" id="v-pass">—</div>
+    </div>
+    <div class="score-row">
+      <span style="font-size:10px;min-width:28px;color:var(--green);">Bull</span>
+      <div class="score-bar"><div class="sf-g" id="bull-bar" style="width:0%"></div></div>
+      <span style="font-size:10px;min-width:28px;text-align:right;" id="bull-pct">0%</span>
+    </div>
+    <div class="score-row">
+      <span style="font-size:10px;min-width:28px;color:var(--red);">Bear</span>
+      <div class="score-bar"><div class="sf-r" id="bear-bar" style="width:0%"></div></div>
+      <span style="font-size:10px;min-width:28px;text-align:right;" id="bear-pct">0%</span>
+    </div>
+  </div>
+
+  <!-- Entry Levels -->
+  <div class="card">
+    <div class="card-t">Entry Levels</div>
+    <div class="levels">
+      <div class="lvl"><div class="ll2">Entry</div><div class="lv y" id="l-entry">—</div></div>
+      <div class="lvl"><div class="ll2">Stop</div>  <div class="lv r" id="l-stop">—</div></div>
+      <div class="lvl"><div class="ll2">T1</div>    <div class="lv g" id="l-t1">—</div></div>
+      <div class="lvl"><div class="ll2">T2</div>    <div class="lv g" id="l-t2">—</div></div>
+      <div class="lvl"><div class="ll2">R:R</div>   <div class="lv bl" id="l-rr">—</div></div>
+      <div class="lvl"><div class="ll2">Risk pts</div><div class="lv" id="l-risk">—</div></div>
+    </div>
+  </div>
+
+  <!-- Pivot Levels -->
+  <div class="card">
+    <div class="card-t">Pivot Levels</div>
+    <div class="levels" style="grid-template-columns:auto 1fr;">
+      <div class="mu" style="font-size:10px;padding:3px 4px;">R2</div><div class="r" id="l-r2" style="font-size:12px;padding:3px 0;">—</div>
+      <div class="mu" style="font-size:10px;padding:3px 4px;">R1</div><div class="r" id="l-r1" style="font-size:12px;padding:3px 0;">—</div>
+      <div class="mu" style="font-size:10px;padding:3px 4px;">Pivot</div><div class="y" id="l-pivot" style="font-size:12px;padding:3px 0;font-weight:700;">—</div>
+      <div class="mu" style="font-size:10px;padding:3px 4px;">S1</div><div class="g" id="l-s1" style="font-size:12px;padding:3px 0;">—</div>
+      <div class="mu" style="font-size:10px;padding:3px 4px;">S2</div><div class="g" id="l-s2" style="font-size:12px;padding:3px 0;">—</div>
+    </div>
+  </div>
+
+  <!-- Open Orders -->
+  <div class="card">
+    <div class="card-t">Open Orders
+      <button class="btn btn-m" style="padding:2px 7px;font-size:10px;" onclick="loadOpenOrders()">↻</button>
+    </div>
+    <div style="overflow-x:auto;">
+      <table id="oo-table">
+        <thead><tr><th>Side</th><th>Price</th><th>Qty</th><th>%Fill</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+</aside>
+
+<!-- ── Log Strip ── -->
+<footer id="log">
+  <span style="color:var(--muted);font-size:10px;">Activity — </span>
+  <button onclick="document.getElementById('log').innerHTML=''" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:10px;">clear</button>
+</footer>
+
+<!-- ── Modal ── -->
+<div id="modal-overlay">
+  <div id="modal-box">
+    <div id="modal-title"></div>
+    <div id="modal-body"></div>
+    <div id="modal-btns">
+      <button class="btn btn-m" id="modal-cancel">Cancel</button>
+      <button class="btn btn-g" id="modal-confirm">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────────
+const S = {
+  price:     0,
+  change:    0,
+  verdict:   'HOLD',
+  botRunning: false,
+  autoTrade:  false,
+  inPos:      false,
+  posEntry:   0,
+  posQty:     0,
+  posStop:    0,
+  posT1:      0,
+  posT2:      0,
+  posSince:   null,
+  lastResult: null,
+  preset:     'Standard',
+};
+const PRESETS = ['Ultra Fast','Standard','Relaxed','Positional','Tight BB','VWAP Rev','Fast MACD','Explosive'];
+let ws;
+
+// ── Formatters ──
+const fmtN  = (n,d=2) => n == null ? '—' : parseFloat(n).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const fmtP  = (n,d=2) => n == null ? '—' : (n>=0?'+':'')+parseFloat(n).toFixed(d)+'%';
+const pCol  = n => n>=0 ? 'g' : 'r';
+const dp    = v => v>1000?2:v>1?4:6;
+const $     = id => document.getElementById(id);
+
+// ── Log ─────────────────────────────────────────────────────────────────────────
+function log(msg, cls='') {
+  const el  = document.getElementById('log');
+  const now = new Date().toLocaleTimeString();
+  const div = document.createElement('div');
+  div.className = 'll ' + cls;
+  div.innerHTML = `<span class="lt">${now}</span>${msg}`;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+  // Keep only last 200 lines
+  while (el.children.length > 202) el.removeChild(el.children[1]);
+}
+
+// ── Modal ────────────────────────────────────────────────────────────────────────
+function showModal(title, bodyHTML, confirmLabel='Confirm', cancelLabel='Cancel') {
+  return new Promise(res => {
+    $('modal-title').textContent  = title;
+    $('modal-body').innerHTML     = bodyHTML;
+    $('modal-confirm').textContent = confirmLabel;
+    $('modal-cancel').textContent  = cancelLabel;
+    $('modal-overlay').classList.add('open');
+    const ok  = $('modal-confirm');
+    const no  = $('modal-cancel');
+    const done = v => {
+      $('modal-overlay').classList.remove('open');
+      ok.removeEventListener('click', onOk);
+      no.removeEventListener('click', onNo);
+      res(v);
+    };
+    const onOk = () => done(true);
+    const onNo = () => done(false);
+    ok.addEventListener('click', onOk);
+    no.addEventListener('click', onNo);
+  });
+}
+
+// ── API ───────────────────────────────────────────────────────────────────────
+async function api(method, path, body) {
+  const opts = { method, headers: {'Content-Type':'application/json'} };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(path, opts);
+  return r.json();
+}
+const GET  = path       => api('GET',    path);
+const POST = (path,b)   => api('POST',   path, b);
+const DEL  = path       => api('DELETE', path);
+
+// ── Presets ───────────────────────────────────────────────────────────────────
+function initPresets() {
+  $('preset-btns').innerHTML = PRESETS.map(p =>
+    `<button class="pb${p===S.preset?' on':''}" onclick="setPreset('${p}')">${p}</button>`
+  ).join('');
+}
+function setPreset(name) {
+  S.preset = name;
+  document.querySelectorAll('.pb').forEach(b => b.classList.toggle('on', b.textContent===name));
+}
+
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+function connectWS() {
+  const proto = location.protocol==='https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.onopen = () => {
+    $('conn-dot').className = 'dot green';
+    $('conn-text').textContent = 'Live';
+    log('WebSocket connected');
+  };
+
+  ws.onmessage = e => {
+    try { handleMsg(JSON.parse(e.data)); } catch(_) {}
+  };
+
+  ws.onclose = () => {
+    $('conn-dot').className = 'dot red';
+    $('conn-text').textContent = 'Reconnecting…';
+    log('WebSocket disconnected — retrying in 3s', 'r');
+    setTimeout(connectWS, 3000);
+  };
+}
+
+function handleMsg(d) {
+  switch (d.type) {
+    case 'ticker':        onTicker(d);         break;
+    case 'scalp_result':  onScalpResult(d);    break;
+    case 'scalp_trade':   onScalpTrade(d);     break;
+    case 'scalp_heartbeat': onHeartbeat(d);    break;
+    case 'bot_status':    onBotStatus(d);       break;
+    case 'trade':         onBotTrade(d);        break;
+    case 'log':           log(d.msg);           break;
+  }
+}
+
+// ── Ticker ────────────────────────────────────────────────────────────────────
+function onTicker(d) {
+  S.price  = d.price;
+  S.change = d.change;
+  $('hdr-price').textContent = '$' + fmtN(d.price, dp(d.price));
+  const cc = $('hdr-change');
+  cc.textContent = fmtP(d.change);
+  cc.className   = d.change >= 0 ? 'g' : 'r';
+  $('i-chg').textContent  = fmtP(d.change);
+  $('i-chg').className    = 'ind-val ' + (d.change>=0?'g':'r');
+  // Update unrealized P&L if in position
+  if (S.inPos && S.posEntry > 0) {
+    const upnl = (d.price - S.posEntry) / S.posEntry * 100;
+    $('p-cur').textContent  = '$' + fmtN(d.price, dp(d.price));
+    $('p-upnl').textContent = fmtP(upnl, 3);
+    $('p-upnl').className   = pCol(upnl);
+  }
+}
+
+// ── Scalp Result ──────────────────────────────────────────────────────────────
+function onScalpResult(d) {
+  S.lastResult = d;
+  S.verdict    = d.verdict;
+
+  // Verdict badge
+  const badge = $('verdict-badge');
+  badge.textContent = d.verdict;
+  badge.className   = d.verdict==='LONG' ? 'vl' : d.verdict==='SHORT' ? 'vs' : 'vh';
+  $('v-bull').textContent = d.bull_score.toFixed(1);
+  $('v-bear').textContent = d.bear_score.toFixed(1);
+  $('v-pass').textContent = `${d.bull_pass} bull / ${d.bear_pass} bear conditions`;
+
+  const MAX = 12;
+  const bp  = Math.min(100, d.bull_score/MAX*100);
+  const rp  = Math.min(100, d.bear_score/MAX*100);
+  $('bull-bar').style.width = bp + '%';
+  $('bear-bar').style.width = rp + '%';
+  $('bull-pct').textContent = bp.toFixed(0) + '%';
+  $('bear-pct').textContent = rp.toFixed(0) + '%';
+
+  // Indicators
+  $('i-rsi').textContent   = d.rsi.toFixed(1);
+  $('i-rsi').className     = 'ind-val ' + (d.rsi<30?'g':d.rsi>70?'r':'');
+  $('i-stoch').textContent = d.stoch_k.toFixed(1) + '/' + d.stoch_d.toFixed(1);
+  $('i-macd').textContent  = d.macd_hist > 0 ? '+'+d.macd_hist.toFixed(5) : d.macd_hist.toFixed(5);
+  $('i-macd').className    = 'ind-val ' + (d.macd_hist>=0?'g':'r');
+  $('i-bb').textContent    = (d.bb_pct*100).toFixed(1) + '%';
+  $('i-vol').textContent   = d.volume_ratio.toFixed(2) + 'x';
+  $('i-vol').className     = 'ind-val ' + (d.volume_ratio>1.2?'g':d.volume_ratio<0.8?'r':'');
+  $('i-vwap').textContent  = '$' + fmtN(d.vwap, dp(d.vwap));
+  $('i-atr').textContent   = fmtN(d.atr, dp(d.atr));
+
+  // Entry levels
+  const e = d.entry || 0;
+  const dec = dp(e);
+  $('l-entry').textContent = e ? '$'+fmtN(e,dec) : '—';
+  $('l-stop').textContent  = d.stop ? '$'+fmtN(d.stop,dec) : '—';
+  $('l-t1').textContent    = d.t1   ? '$'+fmtN(d.t1,dec)   : '—';
+  $('l-t2').textContent    = d.t2   ? '$'+fmtN(d.t2,dec)   : '—';
+  $('l-rr').textContent    = d.risk_reward ? d.risk_reward.toFixed(2)+':1' : '—';
+  $('l-risk').textContent  = d.risk_pts ? fmtN(d.risk_pts,dec) : '—';
+
+  // Pivot levels
+  $('l-pivot').textContent = '$' + fmtN(d.pivot, dec);
+  $('l-r1').textContent   = '$' + fmtN(d.r1,    dec);
+  $('l-r2').textContent   = '$' + fmtN(d.r2,    dec);
+  $('l-s1').textContent   = '$' + fmtN(d.s1,    dec);
+  $('l-s2').textContent   = '$' + fmtN(d.s2,    dec);
+
+  // Timestamp
+  $('mosaic-ts').textContent = 'Updated ' + new Date().toLocaleTimeString();
+
+  // Conditions mosaic
+  renderMosaic(d.conditions);
+
+  // Position from result payload
+  if (d.position) updatePosition(d.position);
+  if (d.stats)    updateStats(d.stats);
+}
+
+function renderMosaic(conditions) {
+  $('mosaic').innerHTML = conditions.map(c => {
+    const bull = c.bull_pts > 0;
+    const bear = c.bear_pts > 0;
+    const cls  = bull ? 'cond cb' : bear ? 'cond cr' : 'cond';
+    const col  = bull ? 'g' : bear ? 'r' : 'mu';
+    const pts  = bull ? `+${c.bull_pts} bull` : bear ? `+${c.bear_pts} bear` : 'neutral';
+    return `<div class="${cls}" title="${c.detail}">
+      <div class="cn">${c.name}</div>
+      <div class="cl ${col}">${c.label}</div>
+      <div class="cp ${col}">${pts}</div>
+      <div class="cd">${c.detail}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Scalp Trade ───────────────────────────────────────────────────────────────
+function onScalpTrade(d) {
+  const col = d.side === 'BUY' ? 'g' : 'r';
+  const pnl = d.pnl_pct ? fmtP(d.pnl_pct,3) : '—';
+  log(`[SCALP] <span class="${col}">${d.side}</span> ${d.symbol} @ ${d.exit||d.entry}  PnL: ${pnl}  ${d.reason}`);
+  loadScalpTrades();
+}
+
+// ── Heartbeat ─────────────────────────────────────────────────────────────────
+function onHeartbeat(d) {
+  S.botRunning = d.running;
+  S.autoTrade  = d.auto_trade;
+  setBotPill(d);
+  $('hdr-start').disabled = d.running;
+  $('hdr-stop').disabled  = !d.running;
+  updateSummaryStats({
+    running:      d.running,
+    last_scan:    d.last_scan,
+    daily_trades: d.daily_trades,
+    daily_pnl:    d.daily_pnl,
+  });
+  S.inPos = d.in_position;
+  $('pos-card-wrap').style.display = d.in_position ? '' : 'none';
+  $('close-pos-btn').disabled = !d.in_position;
+}
+
+function setBotPill(d) {
+  const dot  = $('bot-dot');
+  const text = $('bot-pill-text');
+  if (!d.running) {
+    dot.className = 'dot red';
+    text.textContent = 'STOPPED';
+  } else if (d.auto_trade && d.in_position) {
+    dot.className = 'dot orange';
+    text.textContent = 'IN POSITION';
+  } else if (d.auto_trade) {
+    dot.className = 'dot green';
+    text.textContent = 'AUTO-TRADE';
+  } else {
+    dot.className = 'dot green';
+    text.textContent = 'SCANNING';
+  }
+}
+
+function updateSummaryStats(d) {
+  if ('running'      in d) $('ss-running').textContent = d.running ? (S.autoTrade?'AUTO-TRADE':'SCAN-ONLY') : 'STOPPED';
+  if ('last_scan'    in d) $('ss-scan').textContent    = d.last_scan || '—';
+  if ('daily_trades' in d) $('ss-dt').textContent      = d.daily_trades;
+  if ('daily_pnl'    in d) {
+    const el = $('ss-dpnl');
+    el.textContent = fmtP(d.daily_pnl, 2);
+    el.className = 'sv ' + pCol(d.daily_pnl||0);
+  }
+}
+
+function updateStats(st) {
+  $('ss-running').textContent = st.running ? (st.auto_trade?'AUTO-TRADE':'SCAN-ONLY') : 'STOPPED';
+  if (st.last_scan_time) $('ss-scan').textContent = st.last_scan_time;
+  $('ss-dt').textContent  = st.daily_trades || 0;
+  $('ss-tt').textContent  = st.total_trades || 0;
+  const dpnl = $('ss-dpnl');
+  dpnl.textContent = fmtP(st.daily_pnl_pct||0, 2);
+  dpnl.className = 'sv ' + pCol(st.daily_pnl_pct||0);
+  const tpnl = $('ss-tpnl');
+  tpnl.textContent = fmtP(st.total_pnl_pct||0, 2);
+  tpnl.className = 'sv ' + pCol(st.total_pnl_pct||0);
+  $('ss-pos').textContent = st.in_position ? 'YES' : 'No';
+}
+
+function updatePosition(pos) {
+  S.inPos    = pos.in_position;
+  S.posEntry = pos.entry_price;
+  S.posQty   = pos.entry_qty;
+  S.posStop  = pos.stop_price;
+  S.posT1    = pos.t1_price;
+  S.posT2    = pos.t2_price;
+  S.posSince = pos.entry_time;
+
+  $('pos-card-wrap').style.display = pos.in_position ? '' : 'none';
+  $('close-pos-btn').disabled = !pos.in_position;
+  $('ss-pos').textContent = pos.in_position ? 'YES' : 'No';
+
+  if (pos.in_position) {
+    const d = dp(pos.entry_price);
+    $('p-sym').textContent   = S.lastResult?.symbol || '—';
+    $('p-entry').textContent = '$' + fmtN(pos.entry_price, d);
+    $('p-stop').textContent  = '$' + fmtN(pos.stop_price, d);
+    $('p-t1').textContent    = '$' + fmtN(pos.t1_price, d);
+    $('p-t2').textContent    = '$' + fmtN(pos.t2_price, d);
+    $('p-qty').textContent   = fmtN(pos.entry_qty, 6);
+    $('p-since').textContent = pos.entry_time || '—';
+  }
+}
+
+function onBotStatus(d) {
+  // Legacy bot status (non-scalp) — update header meta
+  if (d.state && d.state !== 'NOT_CREATED') {
+    $('hdr-meta').textContent = `Bot: ${d.state} ${d.symbol||''} ${d.strategy||''}  PnL:${d.total_pnl||''}`;
+  }
+}
+
+function onBotTrade(d) {
+  log(`[BOT] <span class="${d.side==='BUY'?'g':'r'}">${d.side}</span> ${d.symbol} @$${fmtN(d.price,2)}`);
+}
+
+// ── Scalp Bot Controls ────────────────────────────────────────────────────────
+async function startScalpBot() {
+  const cfg = {
+    symbol:             $('c-symbol').value.toUpperCase(),
+    interval:           $('c-interval').value,
+    preset:             S.preset,
+    auto_trade:         $('c-autotrade').checked,
+    amount_usdt:        parseFloat($('c-amount').value) || 50,
+    sl_atr_mult:        parseFloat($('c-sl').value) || 1.0,
+    t1_atr_mult:        parseFloat($('c-t1').value) || 1.5,
+    t2_atr_mult:        parseFloat($('c-t2').value) || 3.0,
+    max_daily_trades:   parseInt($('c-max-dt').value) || 10,
+    max_daily_loss_pct: parseFloat($('c-maxloss').value) || 5.0,
+    cooldown_secs:      parseInt($('c-cool').value) || 60,
+    scan_secs:          parseInt($('c-scan').value) || 30,
+  };
+
+  if (cfg.auto_trade) {
+    const ok = await showModal(
+      'Enable Auto-Trade?',
+      `<b style="color:var(--orange);">Warning:</b> Auto-trade will place real market orders on <b>${cfg.symbol}</b>.<br><br>` +
+      `Amount: <b>$${cfg.amount_usdt}</b>  Max daily: <b>${cfg.max_daily_trades}</b> trades  Loss limit: <b>${cfg.max_daily_loss_pct}%</b><br><br>` +
+      `Confirm you understand this will trade with real funds.`,
+      'Enable Auto-Trade', 'Cancel'
+    );
+    if (!ok) return;
+  }
+
+  const r = await POST('/api/scalp/bot/start', cfg);
+  if (!r.ok) { log('[SCALP] Start failed: ' + r.error, 'r'); return; }
+  log(`[SCALP] Bot started  ${cfg.symbol}  ${cfg.preset}  ${cfg.interval}  ${cfg.auto_trade?'AUTO':'SCAN'}`, 'g');
+}
+
+async function stopScalpBot() {
+  const r = await POST('/api/scalp/bot/stop', {});
+  if (!r.ok) { log('Stop failed: '+r.error, 'r'); return; }
+  log('[SCALP] Bot stopped');
+}
+
+async function closePosition() {
+  const ok = await showModal(
+    'Close Position?',
+    `Close the current scalp position at market price?`,
+    'Close Now', 'Cancel'
+  );
+  if (!ok) return;
+  const r = await POST('/api/scalp/position/close', {});
+  if (r.ok) {
+    log(`[SCALP] Position closed  PnL=${fmtP(r.data.pnl_pct,3)}`, r.data.pnl_pct>=0?'g':'r');
+  } else {
+    log('Close failed: ' + r.error, 'r');
+  }
+}
+
+// ── Balances ──────────────────────────────────────────────────────────────────
+async function loadBalances() {
+  const r = await GET('/api/balances');
+  if (!r.ok) return;
+  const rows = r.data.filter(b => b.total > 0.00001);
+  document.querySelector('#bal-table tbody').innerHTML =
+    rows.length ? rows.map(b =>
+      `<tr><td>${b.asset}</td><td>${fmtN(b.free,6)}</td><td><b>${fmtN(b.total,6)}</b></td></tr>`
+    ).join('') : '<tr><td colspan="3" class="mu">No balances</td></tr>';
+}
+
+// ── Open Orders ───────────────────────────────────────────────────────────────
+async function loadOpenOrders() {
+  const r = await GET('/api/orders/open');
+  if (!r.ok) return;
+  const tb = document.querySelector('#oo-table tbody');
+  if (!r.data.length) {
+    tb.innerHTML = '<tr><td colspan="5" class="mu" style="text-align:center;">None</td></tr>';
+    return;
+  }
+  tb.innerHTML = r.data.map(o =>
+    `<tr>
+      <td class="${o.side==='BUY'?'g':'r'}">${o.side}</td>
+      <td>${o.price?'$'+fmtN(o.price,2):'MKT'}</td>
+      <td>${fmtN(o.qty,6)}</td>
+      <td>${fmtN(o.filled,1)}%</td>
+      <td><button class="btn btn-r" style="padding:1px 6px;font-size:10px;"
+          onclick="cancelOrd('${o.symbol}',${o.id})">✕</button></td>
+    </tr>`
+  ).join('');
+}
+
+async function cancelOrd(sym, id) {
+  const ok = await showModal('Cancel Order', `Cancel order ${id} on ${sym}?`, 'Cancel Order', 'Back');
+  if (!ok) return;
+  const r = await DEL(`/api/order/${sym}/${id}`);
+  if (r.ok) { log(`Cancelled order ${id}`); loadOpenOrders(); }
+  else log('Cancel failed: '+r.error, 'r');
+}
+
+// ── Scalp Trades ──────────────────────────────────────────────────────────────
+async function loadScalpTrades() {
+  const r = await GET('/api/scalp/trades');
+  if (!r.ok) return;
+  const tb = document.querySelector('#scalp-trade-table tbody');
+  if (!r.data.length) {
+    tb.innerHTML = '<tr><td colspan="6" class="mu" style="text-align:center;">No trades yet</td></tr>';
+    return;
+  }
+  tb.innerHTML = [...r.data].reverse().map(t => {
+    const pc = pCol(t.pnl_pct||0);
+    const exit = t.exit ? '$'+fmtN(t.exit, dp(t.exit||t.entry)) : '—';
+    return `<tr>
+      <td class="mu">${t.time}</td>
+      <td class="${t.side==='BUY'?'g':'r'}">${t.side}</td>
+      <td>$${fmtN(t.entry, dp(t.entry))}</td>
+      <td>${exit}</td>
+      <td class="${pc}">${t.pnl_pct ? fmtP(t.pnl_pct,3) : '—'}</td>
+      <td class="mu" style="max-width:130px;overflow:hidden;text-overflow:ellipsis;">${t.reason||''}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Manual Order Modal ────────────────────────────────────────────────────────
+function openManualOrder() {
+  showModal(
+    'Manual Order',
+    `<div class="form-row" style="gap:8px;margin-bottom:8px;">
+      <div><label>Symbol</label><input id="mo-sym" value="${S.lastResult?.symbol||'BTCUSDT'}" style="text-transform:uppercase;"/></div>
+      <div><label>Type</label>
+        <select id="mo-type" onchange="$('mo-lp-row').style.display=this.value==='LIMIT'?'':'none'">
+          <option>MARKET</option><option>LIMIT</option>
+        </select>
+      </div>
+    </div>
+    <div id="mo-lp-row" style="display:none;margin-bottom:8px;">
+      <label>Limit Price</label>
+      <input id="mo-price" placeholder="price" type="number" step="any"/>
+    </div>
+    <label>Qty</label>
+    <input id="mo-qty" placeholder="0.001" type="number" step="any" style="margin-bottom:12px;"/>
+    <div class="btn-row">
+      <button class="btn btn-g" onclick="placeManual('BUY')">BUY</button>
+      <button class="btn btn-r" onclick="placeManual('SELL')">SELL</button>
+    </div>
+    <div id="mo-result" style="font-size:11px;color:var(--muted);margin-top:6px;"></div>`,
+    'Close', ''
+  );
+  $('modal-confirm').textContent = 'Close';
+  $('modal-cancel').style.display = 'none';
+}
+
+async function placeManual(side) {
+  const sym  = $('mo-sym').value.toUpperCase();
+  const type = $('mo-type').value;
+  const qty  = parseFloat($('mo-qty').value);
+  if (!qty || qty <= 0) { $('mo-result').innerHTML = '<span class="r">Enter qty</span>'; return; }
+
+  let r;
+  if (type === 'MARKET') {
+    r = await POST('/api/order/market', {symbol:sym, side, qty});
+  } else {
+    const price = parseFloat($('mo-price').value);
+    if (!price) { $('mo-result').innerHTML = '<span class="r">Enter price</span>'; return; }
+    r = await POST('/api/order/limit', {symbol:sym, side, qty, price});
+  }
+  if (r.ok) {
+    $('mo-result').innerHTML = `<span class="g">${side} placed — ID:${r.data.order_id} ${r.data.status}</span>`;
+    log(`Manual ${side} ${sym} qty=${qty}  id=${r.data.order_id}`);
+    loadOpenOrders();
+  } else {
+    $('mo-result').innerHTML = `<span class="r">${r.error}</span>`;
+  }
+}
+
+// ── Backtest Modal ────────────────────────────────────────────────────────────
+function openBacktest() {
+  const sym = S.lastResult?.symbol || 'BTCUSDT';
+  showModal('Backtest', `
+    <div class="form-row" style="gap:8px;margin-bottom:6px;">
+      <div><label>Symbol</label><input id="bt-sym" value="${sym}"/></div>
+      <div><label>Interval</label>
+        <select id="bt-int">
+          <option>1m</option><option>5m</option><option selected>1h</option><option>4h</option><option>1d</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row" style="gap:8px;margin-bottom:6px;">
+      <div><label>Strategy</label><select id="bt-strat"></select></div>
+      <div><label>Days</label><input id="bt-days" value="90" type="number"/></div>
+    </div>
+    <div class="form-row" style="gap:8px;margin-bottom:8px;">
+      <div><label>Equity USDT</label><input id="bt-eq" value="1000" type="number"/></div>
+      <div><label>SL %</label><input id="bt-sl" value="2" type="number" step="0.5"/></div>
+      <div><label>TP %</label><input id="bt-tp" value="3" type="number" step="0.5"/></div>
+    </div>
+    <button class="btn btn-b btn-full" id="bt-run" onclick="runBT()">Run Backtest</button>
+    <div id="bt-status" style="font-size:11px;color:var(--muted);margin:6px 0;"></div>
+    <div id="bt-result" style="display:none;">
+      <div class="bt-summary" id="bt-summary"></div>
+      <div style="overflow-x:auto;max-height:220px;overflow-y:auto;">
+        <table id="bt-trades"><thead><tr><th>Entry</th><th>Exit</th><th>Entry$</th><th>Exit$</th><th>PnL%</th><th>Reason</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>`,
+    'Close', ''
+  );
+  $('modal-confirm').textContent = 'Close';
+  $('modal-cancel').style.display = 'none';
+  // Populate strategy select
+  GET('/api/strategies').then(r => {
+    if (r.ok) $('bt-strat').innerHTML = r.data.map(s=>`<option value="${s}">${s}</option>`).join('');
+  });
+}
+
+async function runBT() {
+  const btn = $('bt-run');
+  btn.disabled = true;
+  $('bt-status').textContent = 'Fetching data…';
+  const r = await POST('/api/backtest', {
+    symbol:   $('bt-sym').value.toUpperCase(),
+    interval: $('bt-int').value,
+    strategy: $('bt-strat').value,
+    days:     parseInt($('bt-days').value),
+    equity:   parseFloat($('bt-eq').value),
+    sl:       parseFloat($('bt-sl').value),
+    tp:       parseFloat($('bt-tp').value),
+  });
+  btn.disabled = false;
+  if (!r.ok) { $('bt-status').innerHTML = `<span class="r">${r.error}</span>`; return; }
+  $('bt-status').innerHTML = '<span class="g">Done</span>';
+  const d = r.data;
+  $('bt-result').style.display = '';
+  $('bt-summary').innerHTML = [
+    ['Period',     `${d.start} → ${d.end}`],
+    ['Strategy',   `${d.strategy}  ${d.interval}`],
+    ['Equity',     `$${fmtN(d.initial)} → <b>$${fmtN(d.final)}</b>`],
+    ['PnL',        `<span class="${pCol(d.pnl_pct)}">${fmtP(d.pnl_pct)}  $${fmtN(d.pnl_usdt)}</span>`],
+    ['Drawdown',   fmtN(d.drawdown)+'%'],
+    ['Trades',     d.total_trades],
+    ['Win/Loss',   `<span class="g">${d.wins}</span> / <span class="r">${d.losses}</span>`],
+    ['Win Rate',   fmtN(d.win_rate,1)+'%'],
+    ['Avg PnL',    `<span class="${pCol(d.avg_pnl)}">${fmtP(d.avg_pnl)}</span>`],
+    ['Best/Worst', `<span class="g">${fmtP(d.best)}</span> / <span class="r">${fmtP(d.worst)}</span>`],
+  ].map(([l,v]) => `<div class="bt-label">${l}</div><div>${v}</div>`).join('');
+
+  document.querySelector('#bt-trades tbody').innerHTML = d.trades.map(t => {
+    const pc = pCol(t.pnl_pct);
+    return `<tr>
+      <td class="mu">${t.entry_time}</td>
+      <td class="mu">${t.exit_time}</td>
+      <td>$${fmtN(t.entry_price,2)}</td>
+      <td>$${fmtN(t.exit_price,2)}</td>
+      <td class="${pc}">${fmtP(t.pnl_pct)}</td>
+      <td class="mu">${t.reason_out}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  initPresets();
+  connectWS();
+  await Promise.all([loadBalances(), loadOpenOrders(), loadScalpTrades()]);
+
+  // Check if scalp bot is already running (page refresh)
+  const r = await GET('/api/scalp/bot/status');
+  if (r.ok) {
+    const {stats, position, config: cfg} = r.data;
+    if (stats?.running) {
+      S.botRunning = true;
+      setBotPill({running:true, auto_trade:cfg?.auto_trade, in_position:position?.in_position});
+      $('hdr-start').disabled = true;
+      $('hdr-stop').disabled  = false;
+      if (cfg?.preset) setPreset(cfg.preset);
+    }
+    if (position?.in_position) updatePosition(position);
+    if (stats) updateStats(stats);
+  }
+
+  // Refresh open orders every 30s
+  setInterval(loadOpenOrders, 30000);
+}
+
+init();
+</script>
+</body>
+</html>
