@@ -1,2 +1,1 @@
-# open-claude-2-
-claude free
+# binance terminal with bot
