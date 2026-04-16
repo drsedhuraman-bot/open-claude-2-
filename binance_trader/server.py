@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 import config
 from bot import BotState, TradingBot, TradeRecord
 from client import BinanceClient
+from mt5_client import MT5Client, SYMBOL_GROUPS, ALL_FX_SYMBOLS
 from strategies import STRATEGIES, ScalpEngine, SCALP_PRESETS
 from strategies.base import Signal
 
@@ -31,8 +32,20 @@ logger = logging.getLogger("binance_trader.server")
 # ── Core globals ───────────────────────────────────────────────────────────────
 
 client:     BinanceClient | None = None
+mt5_client: MT5Client     | None = None
 bot:        TradingBot    | None = None
 ws_clients: list[WebSocket] = []
+
+# Broker routing: "binance" | "mt5"
+# Crypto USDT pairs → Binance; everything else → MT5/yfinance
+def _is_crypto_symbol(sym: str) -> bool:
+    return sym.upper().endswith("USDT") or sym.upper().endswith("BTC") or sym.upper().endswith("ETH")
+
+def _get_data_client(symbol: str):
+    """Return the appropriate data client for a given symbol."""
+    if _is_crypto_symbol(symbol):
+        return client
+    return mt5_client
 
 # ── Scalp-bot globals ──────────────────────────────────────────────────────────
 
@@ -95,7 +108,7 @@ opt_history: list[dict] = []   # keep last 20 optimize runs
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global client, bot
+    global client, bot, mt5_client
     errors = config.validate()
     if errors:
         for e in errors:
@@ -107,9 +120,24 @@ async def lifespan(app: FastAPI):
             _init_bot(config.BOT_SYMBOL, config.BOT_INTERVAL, config.BOT_STRATEGY)
         else:
             logger.error("Binance ping failed")
+
+    # MT5 client always initialised (yfinance fallback on non-Windows)
+    mt5_client = MT5Client(
+        login    = int(config._getenv("MT5_LOGIN", "0") or 0),
+        password = config._getenv("MT5_PASSWORD", ""),
+        server   = config._getenv("MT5_SERVER", ""),
+    )
+    if mt5_client.ping():
+        mode = "LIVE" if mt5_client.is_live else "yfinance-fallback"
+        logger.info("MT5Client ready  mode=%s", mode)
+    else:
+        logger.warning("MT5Client ping failed")
+
     yield
     # Cleanup
     scalp_stats["running"] = False
+    if mt5_client and mt5_client.is_live:
+        mt5_client.disconnect()
 
 
 app = FastAPI(title="Binance Trader", lifespan=lifespan)
@@ -153,8 +181,20 @@ def _err(msg: str, status: int = 400) -> JSONResponse:
     return JSONResponse({"ok": False, "error": msg}, status_code=status)
 
 
+def _nan_clean(obj: Any) -> Any:
+    """Recursively replace NaN/Inf floats with None for JSON safety."""
+    import math
+    if isinstance(obj, float):
+        return None if (math.isnan(obj) or math.isinf(obj)) else obj
+    if isinstance(obj, dict):
+        return {k: _nan_clean(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_nan_clean(v) for v in obj]
+    return obj
+
+
 def _ok(data: Any = None) -> dict:
-    return {"ok": True, "data": data}
+    return {"ok": True, "data": _nan_clean(data)}
 
 
 def _fmt_time(dt: datetime | None) -> str | None:
@@ -178,7 +218,12 @@ async def _scalp_tick() -> None:
     symbol   = scalp_cfg["symbol"]
     interval = scalp_cfg["interval"]
 
-    df            = client.get_klines(symbol, interval, limit=220)
+    data_client = _get_data_client(symbol)
+    if not data_client:
+        logger.error("No data client for %s", symbol)
+        return
+
+    df            = data_client.get_klines(symbol, interval, limit=220)
     current_price = float(df["close"].iloc[-1])
 
     # ── Check open position for stop / T1 / T2 ────────────────────────────────
@@ -201,7 +246,7 @@ async def _scalp_tick() -> None:
             pnl = (current_price - entry) / entry * 100
             try:
                 if scalp_cfg["auto_trade"]:
-                    client.market_sell(symbol, qty)
+                    data_client.market_sell(symbol, qty)
                 scalp_pos["in_position"] = False
                 scalp_stats["daily_trades"]  += 1
                 scalp_stats["total_trades"]  += 1
@@ -290,7 +335,7 @@ async def _scalp_tick() -> None:
         else:
             qty = scalp_cfg["amount_usdt"] / current_price
             try:
-                order = client.market_buy(symbol, qty)
+                order = data_client.market_buy(symbol, qty)
                 scalp_pos.update({
                     "in_position": True,
                     "entry_price": current_price,
@@ -323,7 +368,7 @@ async def _scalp_loop() -> None:
     logger.info("Scalp auto-scan started  interval=%s", scalp_cfg["scan_secs"])
     while scalp_stats["running"]:
         try:
-            if client:
+            if client or mt5_client:
                 await _scalp_tick()
         except Exception as e:
             logger.error("Scalp tick error: %s", e, exc_info=True)
@@ -353,7 +398,8 @@ async def _run_optimize(
     loop = asyncio.get_event_loop()
 
     def _sync_optimize():
-        df = client.get_klines(symbol, interval, limit=limit)
+        dc = _get_data_client(symbol)
+        df = dc.get_klines(symbol, interval, limit=limit)
         rows = []
         for preset_name in SCALP_PRESETS:
             engine = ScalpEngine.from_preset(preset_name)
@@ -442,15 +488,17 @@ def index():
 
 @app.get("/api/ticker/{symbol}")
 def get_ticker(symbol: str):
-    if not client:
-        return _err("Not connected")
+    dc = _get_data_client(symbol)
+    if not dc:
+        return _err("No data client available")
     try:
-        t = client.get_ticker(symbol.upper())
+        t = dc.get_ticker(symbol.upper())
         return _ok({
-            "symbol": t.symbol, "price":  t.price,
+            "symbol": t.symbol, "price": t.price,
             "change": t.change_pct_24h,
-            "high":   t.high_24h, "low": t.low_24h,
+            "high": t.high_24h, "low": t.low_24h,
             "volume": t.volume_24h, "bid": t.bid, "ask": t.ask,
+            "spread": getattr(t, "spread_pips", 0),
         })
     except Exception as e:
         return _err(str(e))
@@ -458,10 +506,11 @@ def get_ticker(symbol: str):
 
 @app.get("/api/klines/{symbol}/{interval}")
 def get_klines(symbol: str, interval: str, limit: int = 100):
-    if not client:
-        return _err("Not connected")
+    dc = _get_data_client(symbol)
+    if not dc:
+        return _err("No data client available")
     try:
-        df = client.get_klines(symbol.upper(), interval, limit=limit)
+        df = dc.get_klines(symbol.upper(), interval, limit=limit)
         return _ok(df[["open_time", "open", "high", "low", "close", "volume"]]
                    .assign(open_time=df["open_time"].dt.strftime("%Y-%m-%d %H:%M"))
                    .to_dict(orient="records"))
@@ -700,15 +749,16 @@ def scalp_bot_status():
 async def scalp_close_position():
     if not scalp_pos["in_position"]:
         return _err("No open position")
-    if not client:
-        return _err("Not connected")
     symbol = scalp_cfg["symbol"]
+    dc = _get_data_client(symbol)
+    if not dc:
+        return _err("No data client for symbol")
     qty    = scalp_pos["entry_qty"]
     entry  = scalp_pos["entry_price"]
     try:
-        t = client.get_ticker(symbol)
+        t = dc.get_ticker(symbol)
         cur = t.price
-        order = client.market_sell(symbol, qty)
+        order = dc.market_sell(symbol, qty)
         pnl = (cur - entry) / entry * 100
         scalp_pos["in_position"] = False
         scalp_stats["daily_trades"]  += 1
@@ -799,15 +849,16 @@ def optimize_history():
 
 @app.post("/api/scalp/analyze")
 def scalp_analyze(body: dict):
-    if not client:
-        return _err("Not connected")
     symbol   = body.get("symbol", config.BOT_SYMBOL).upper()
     interval = body.get("interval", "5m")
     limit    = int(body.get("limit", 200))
     preset   = body.get("preset", "Standard")
     params   = {k: body[k] for k in ("sl_atr_mult","t1_atr_mult","t2_atr_mult") if k in body}
+    dc = _get_data_client(symbol)
+    if not dc:
+        return _err("No data client for symbol")
     try:
-        df     = client.get_klines(symbol, interval, limit=limit)
+        df     = dc.get_klines(symbol, interval, limit=limit)
         engine = ScalpEngine.from_preset(preset, **params)
         r      = engine.analyze(df)
         return _ok({
@@ -886,6 +937,95 @@ def run_backtest(body: dict):
         return _err(str(e))
 
 
+# ── MT5 / Forex ────────────────────────────────────────────────────────────────
+
+@app.post("/api/mt5/connect")
+async def mt5_connect(body: dict):
+    global mt5_client
+    login    = int(body.get("login", 0))
+    password = str(body.get("password", ""))
+    server   = str(body.get("server", ""))
+    if not login or not password:
+        return _err("login and password are required")
+    success = mt5_client.connect(login, password, server)
+    status  = mt5_client.status()
+    mode    = "LIVE" if success else "yfinance-fallback"
+    await _broadcast({"type": "log",
+        "msg": f"[MT5] {'Connected' if success else 'Connect failed'}  mode={mode}  server={server}"})
+    await _broadcast({"type": "mt5_status", **status})
+    return _ok(status)
+
+
+@app.post("/api/mt5/disconnect")
+async def mt5_disconnect():
+    mt5_client.disconnect()
+    await _broadcast({"type": "log", "msg": "[MT5] Disconnected"})
+    return _ok(mt5_client.status())
+
+
+@app.get("/api/mt5/status")
+def mt5_status():
+    if not mt5_client:
+        return _ok({"connected": False, "mode": "not-initialised"})
+    return _ok(mt5_client.status())
+
+
+@app.get("/api/mt5/symbols")
+def mt5_symbol_groups():
+    return _ok(SYMBOL_GROUPS)
+
+
+@app.get("/api/mt5/ticker/{symbol}")
+def mt5_ticker(symbol: str):
+    if not mt5_client:
+        return _err("MT5 client not ready")
+    try:
+        t = mt5_client.get_ticker(symbol.upper())
+        return _ok({
+            "symbol": t.symbol, "price": t.price,
+            "bid": t.bid, "ask": t.ask,
+            "change": t.change_pct_24h,
+            "high": t.high_24h, "low": t.low_24h,
+            "volume": t.volume_24h, "spread": t.spread_pips,
+        })
+    except Exception as e:
+        return _err(str(e))
+
+
+@app.get("/api/mt5/balances")
+def mt5_balances():
+    if not mt5_client:
+        return _err("MT5 client not ready")
+    try:
+        balances = mt5_client.get_balances()
+        return _ok([{"asset": b.asset, "free": b.free, "locked": b.locked, "total": b.total}
+                    for b in balances])
+    except Exception as e:
+        return _err(str(e))
+
+
+@app.get("/api/mt5/orders")
+def mt5_orders(symbol: str = ""):
+    if not mt5_client:
+        return _err("MT5 client not ready")
+    try:
+        orders = mt5_client.get_open_orders(symbol.upper() if symbol else None)
+        return _ok([{
+            "id": o.order_id, "symbol": o.symbol, "side": o.side,
+            "price": o.price, "qty": o.qty, "status": o.status,
+        } for o in orders])
+    except Exception as e:
+        return _err(str(e))
+
+
+@app.get("/api/broker/status")
+def broker_status():
+    bn = {"connected": client is not None and client.ping(), "mode": "binance",
+          "testnet": config.USE_TESTNET}
+    mx = mt5_client.status() if mt5_client else {"connected": False}
+    return _ok({"binance": bn, "mt5": mx})
+
+
 # ── Meta ───────────────────────────────────────────────────────────────────────
 
 @app.get("/api/strategies")
@@ -923,7 +1063,7 @@ async def websocket_endpoint(ws: WebSocket):
                         await ws.send_text(json.dumps({
                             "type": "bot_status", **bot.status_dict(),
                         }))
-                    # Push scalp bot heartbeat
+                    # Push scalp bot heartbeat + MT5 status
                     await ws.send_text(json.dumps({
                         "type": "scalp_heartbeat",
                         "running":      scalp_stats["running"],
@@ -933,6 +1073,8 @@ async def websocket_endpoint(ws: WebSocket):
                         "last_scan":    scalp_stats["last_scan_time"],
                         "last_verdict": scalp_stats["last_verdict"],
                         "auto_trade":   scalp_cfg["auto_trade"],
+                        "mt5_live":     mt5_client.is_live if mt5_client else False,
+                        "mt5_mode":     mt5_client.status().get("mode","") if mt5_client else "",
                     }))
                 except Exception:
                     pass

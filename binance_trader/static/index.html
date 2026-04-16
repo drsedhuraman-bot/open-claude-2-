@@ -219,6 +219,30 @@ tr:hover td{background:var(--surf2);}
 .bt-summary{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:12px;margin-bottom:10px;}
 .bt-label{color:var(--muted);}
 
+/* ── Broker badge ── */
+.broker-badge{
+  display:inline-flex;align-items:center;gap:5px;
+  background:var(--surf2);border:1px solid var(--border);border-radius:4px;
+  padding:2px 8px;font-size:10px;cursor:pointer;white-space:nowrap;
+}
+.broker-badge.mt5{border-color:var(--purple);color:var(--purple);}
+.broker-badge.bnb {border-color:var(--accent);color:var(--accent);}
+
+/* ── Symbol pills ── */
+.sym-group{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:6px;}
+.sym-pill{
+  padding:2px 7px;border-radius:3px;border:1px solid var(--border);
+  background:transparent;color:var(--muted);cursor:pointer;font-size:10px;
+  transition:all .12s;
+}
+.sym-pill:hover{background:var(--blue);color:#000;border-color:var(--blue);}
+.sym-pill.active{background:var(--accent);color:#000;border-color:var(--accent);}
+.sym-group-label{font-size:9px;color:var(--muted);margin-bottom:2px;
+  text-transform:uppercase;letter-spacing:.4px;}
+
+/* ── MT5 status indicator ── */
+.mt5-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:4px;}
+
 /* ── Optimize results ── */
 .opt-row{display:grid;grid-template-columns:90px 56px 46px 46px 42px 52px;gap:0 6px;
   align-items:center;padding:4px 6px;border-radius:4px;font-size:11px;}
@@ -247,8 +271,10 @@ tr:hover td{background:var(--surf2);}
 
 <!-- ── Header ── -->
 <header id="hdr">
-  <h1>⚡ BINANCE TERMINAL</h1>
+  <h1>⚡ MULTI-BROKER TERMINAL</h1>
   <span class="net-badge" id="net-badge">TESTNET</span>
+  <span class="broker-badge bnb" id="broker-badge-bn" title="Binance">BNB</span>
+  <span class="broker-badge mt5" id="broker-badge-mt5" title="MetaTrader5">MT5 <span id="mt5-mode-badge" style="font-size:9px;opacity:.7;">offline</span></span>
   <span id="hdr-price">—</span>
   <span id="hdr-change"></span>
 
@@ -283,12 +309,70 @@ tr:hover td{background:var(--surf2);}
     <label>Symbol</label>
     <input id="c-symbol" value="BTCUSDT" oninput="this.value=this.value.toUpperCase()" style="margin-bottom:4px;"/>
 
-    <div class="form-row">
+    <!-- Symbol quick-pick groups -->
+    <div id="sym-groups-wrap">
+      <div class="sym-group-label" style="margin-bottom:4px;">Quick Pick</div>
+
+      <div class="sym-group-label">Crypto (Binance)</div>
+      <div class="sym-group">
+        <button class="sym-pill active" onclick="pickSym('BTCUSDT')">BTC</button>
+        <button class="sym-pill" onclick="pickSym('ETHUSDT')">ETH</button>
+        <button class="sym-pill" onclick="pickSym('BNBUSDT')">BNB</button>
+        <button class="sym-pill" onclick="pickSym('SOLUSDT')">SOL</button>
+        <button class="sym-pill" onclick="pickSym('XRPUSDT')">XRP</button>
+        <button class="sym-pill" onclick="pickSym('ADAUSDT')">ADA</button>
+        <button class="sym-pill" onclick="pickSym('DOGEUSDT')">DOGE</button>
+      </div>
+
+      <div class="sym-group-label">FX Majors (MT5/yfinance)</div>
+      <div class="sym-group">
+        <button class="sym-pill" onclick="pickSym('EURUSD')">EUR/USD</button>
+        <button class="sym-pill" onclick="pickSym('GBPUSD')">GBP/USD</button>
+        <button class="sym-pill" onclick="pickSym('USDJPY')">USD/JPY</button>
+        <button class="sym-pill" onclick="pickSym('USDCHF')">USD/CHF</button>
+        <button class="sym-pill" onclick="pickSym('AUDUSD')">AUD/USD</button>
+        <button class="sym-pill" onclick="pickSym('USDCAD')">USD/CAD</button>
+        <button class="sym-pill" onclick="pickSym('NZDUSD')">NZD/USD</button>
+      </div>
+
+      <div class="sym-group-label">FX Minors</div>
+      <div class="sym-group">
+        <button class="sym-pill" onclick="pickSym('EURGBP')">EUR/GBP</button>
+        <button class="sym-pill" onclick="pickSym('EURJPY')">EUR/JPY</button>
+        <button class="sym-pill" onclick="pickSym('GBPJPY')">GBP/JPY</button>
+        <button class="sym-pill" onclick="pickSym('AUDJPY')">AUD/JPY</button>
+        <button class="sym-pill" onclick="pickSym('CADJPY')">CAD/JPY</button>
+        <button class="sym-pill" onclick="pickSym('EURAUD')">EUR/AUD</button>
+      </div>
+
+      <div class="sym-group-label">Metals &amp; Energy</div>
+      <div class="sym-group">
+        <button class="sym-pill" onclick="pickSym('XAUUSD')">Gold</button>
+        <button class="sym-pill" onclick="pickSym('XAGUSD')">Silver</button>
+        <button class="sym-pill" onclick="pickSym('XPTUSD')">Platinum</button>
+        <button class="sym-pill" onclick="pickSym('USOIL')">Oil WTI</button>
+        <button class="sym-pill" onclick="pickSym('UKOIL')">Oil Brent</button>
+        <button class="sym-pill" onclick="pickSym('NATGAS')">NatGas</button>
+      </div>
+
+      <div class="sym-group-label">Indices</div>
+      <div class="sym-group">
+        <button class="sym-pill" onclick="pickSym('US30')">US30</button>
+        <button class="sym-pill" onclick="pickSym('NAS100')">NAS100</button>
+        <button class="sym-pill" onclick="pickSym('SPX500')">S&amp;P500</button>
+        <button class="sym-pill" onclick="pickSym('GER40')">GER40</button>
+        <button class="sym-pill" onclick="pickSym('UK100')">UK100</button>
+        <button class="sym-pill" onclick="pickSym('JP225')">JP225</button>
+      </div>
+    </div>
+
+    <div class="form-row" style="margin-top:6px;">
       <div><label>Interval</label>
         <select id="c-interval">
-          <option value="1m">1m</option><option value="3m">3m</option>
-          <option value="5m" selected>5m</option><option value="15m">15m</option>
-          <option value="30m">30m</option><option value="1h">1h</option>
+          <option value="1m">1m</option><option value="5m" selected>5m</option>
+          <option value="15m">15m</option><option value="30m">30m</option>
+          <option value="1h">1h</option><option value="4h">4h</option>
+          <option value="1d">1d</option>
         </select>
       </div>
       <div><label>Scan every (s)</label>
@@ -298,6 +382,34 @@ tr:hover td{background:var(--surf2);}
 
     <label>Preset</label>
     <div class="presets" id="preset-btns"></div>
+  </div>
+
+  <!-- MT5 Connection -->
+  <div class="card">
+    <div class="card-t">MetaTrader5 Connection
+      <span id="mt5-status-dot" class="mt5-dot" style="background:var(--border);"></span>
+    </div>
+    <div style="font-size:10px;color:var(--muted);margin-bottom:6px;" id="mt5-status-text">
+      Not connected — using yfinance fallback for forex/metals data
+    </div>
+    <div class="form-row">
+      <div><label>Login (account #)</label>
+        <input id="mt5-login" type="number" placeholder="12345678"/>
+      </div>
+      <div><label>Server</label>
+        <input id="mt5-server" placeholder="ICMarkets-Demo01"/>
+      </div>
+    </div>
+    <label>Password</label>
+    <input id="mt5-pass" type="password" placeholder="••••••••" style="margin-bottom:6px;"/>
+    <div class="form-row">
+      <button class="btn btn-b btn-full" onclick="mt5Connect()" id="mt5-connect-btn">Connect MT5</button>
+      <button class="btn btn-m btn-full" onclick="mt5Disconnect()">Disconnect</button>
+    </div>
+    <div style="font-size:10px;color:var(--muted);margin-top:4px;">
+      ⚠ MT5 live trading requires Windows + MT5 terminal open.<br>
+      On this system: yfinance data mode (signals &amp; backtesting only).
+    </div>
   </div>
 
   <!-- Trade config -->
@@ -619,6 +731,73 @@ function setPreset(name) {
   document.querySelectorAll('.pb').forEach(b => b.classList.toggle('on', b.textContent===name));
 }
 
+// ── Symbol picker ─────────────────────────────────────────────────────────────
+function pickSym(sym) {
+  $('c-symbol').value = sym;
+  document.querySelectorAll('.sym-pill').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('onclick') === `pickSym('${sym}')`);
+  });
+  // Fetch a quick ticker to update the header price
+  fetchTicker(sym);
+}
+
+async function fetchTicker(sym) {
+  try {
+    const r = await GET('/api/ticker/' + sym);
+    if (r.ok) {
+      $('hdr-price').textContent = '$' + fmtN(r.data.price, dp(r.data.price));
+      const cc = $('hdr-change');
+      cc.textContent = fmtP(r.data.change);
+      cc.className   = r.data.change >= 0 ? 'g' : 'r';
+    }
+  } catch(_) {}
+}
+
+// ── MT5 ──────────────────────────────────────────────────────────────────────
+async function mt5Connect() {
+  const login    = parseInt($('mt5-login').value);
+  const password = $('mt5-pass').value;
+  const server   = $('mt5-server').value.trim();
+  if (!login || !password) { log('[MT5] Login and password required', 'r'); return; }
+  $('mt5-connect-btn').disabled = true;
+  $('mt5-connect-btn').textContent = 'Connecting…';
+  const r = await POST('/api/mt5/connect', {login, password, server});
+  $('mt5-connect-btn').disabled = false;
+  $('mt5-connect-btn').textContent = 'Connect MT5';
+  if (r.ok) {
+    updateMT5Status(r.data);
+    log(`[MT5] ${r.data.mode === 'live' ? '🟢 Connected LIVE' : '🟡 yfinance fallback'}  ${server}`, 'g');
+  } else {
+    log('[MT5] Connect failed: ' + r.error, 'r');
+  }
+}
+
+async function mt5Disconnect() {
+  const r = await POST('/api/mt5/disconnect', {});
+  if (r.ok) updateMT5Status(r.data);
+  log('[MT5] Disconnected');
+}
+
+function updateMT5Status(data) {
+  const live = data.mode === 'live';
+  const dot  = $('mt5-status-dot');
+  const txt  = $('mt5-status-text');
+  const badge = $('mt5-mode-badge');
+  dot.style.background = live ? 'var(--green)' : data.mode === 'yfinance-fallback' ? 'var(--orange)' : 'var(--border)';
+  if (live) {
+    txt.innerHTML = `<span class="g">Live MT5</span>  ${data.server || ''}  ${data.currency || ''} ${fmtN(data.balance,2)}`;
+    badge.textContent = 'live';
+    badge.style.color = 'var(--green)';
+  } else if (data.mode === 'yfinance-fallback') {
+    txt.textContent = 'Data mode (yfinance) — connect MT5 on Windows for live trading';
+    badge.textContent = 'data';
+    badge.style.color = 'var(--orange)';
+  } else {
+    txt.textContent = 'Not connected';
+    badge.textContent = 'offline';
+  }
+}
+
 // ── WebSocket ─────────────────────────────────────────────────────────────────
 function connectWS() {
   const proto = location.protocol==='https:' ? 'wss' : 'ws';
@@ -651,6 +830,7 @@ function handleMsg(d) {
     case 'bot_status':      onBotStatus(d);      break;
     case 'trade':           onBotTrade(d);       break;
     case 'optimize_result': onOptimizeResult(d); break;
+    case 'mt5_status':      updateMT5Status(d);  break;
     case 'log':             log(d.msg);          break;
   }
 }
@@ -775,6 +955,14 @@ function onHeartbeat(d) {
   S.inPos = d.in_position;
   $('pos-card-wrap').style.display = d.in_position ? '' : 'none';
   $('close-pos-btn').disabled = !d.in_position;
+  // MT5 badge
+  if (d.mt5_mode !== undefined) {
+    const badge = $('mt5-mode-badge');
+    if (badge) {
+      badge.textContent = d.mt5_live ? 'live' : d.mt5_mode || 'data';
+      badge.style.color = d.mt5_live ? 'var(--green)' : 'var(--orange)';
+    }
+  }
 }
 
 function setBotPill(d) {
@@ -1197,6 +1385,10 @@ async function init() {
     if (position?.in_position) updatePosition(position);
     if (stats) updateStats(stats);
   }
+
+  // Check MT5 status on load
+  const mt5r = await GET('/api/mt5/status');
+  if (mt5r.ok) updateMT5Status(mt5r.data);
 
   // Refresh open orders every 30s
   setInterval(loadOpenOrders, 30000);

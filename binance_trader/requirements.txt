@@ -7,3 +7,6 @@ python-dotenv
 prompt_toolkit
 websockets
 aiohttp
+yfinance
+# Windows only (MT5 live trading):
+# MetaTrader5
