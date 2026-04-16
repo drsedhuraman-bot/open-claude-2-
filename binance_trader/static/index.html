@@ -11,7 +11,7 @@
   --text:#e6edf3; --muted:#8b949e; --accent:#f9c74f;
   --green:#3fb950; --red:#f85149; --blue:#58a6ff;
   --purple:#d2a8ff; --orange:#ffa657;
-  --hdr:52px; --log:110px; --left:252px; --right:258px;
+  --hdr:52px; --ticker:28px; --log:110px; --left:252px; --right:258px;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{height:100%;overflow:hidden;}
@@ -19,13 +19,52 @@ body{
   background:var(--bg);color:var(--text);
   font-family:'Segoe UI',system-ui,monospace;font-size:13px;
   display:grid;
-  grid-template-rows:var(--hdr) 1fr var(--log);
+  grid-template-rows:var(--hdr) var(--ticker) 1fr var(--log);
   grid-template-columns:var(--left) 1fr var(--right);
   grid-template-areas:
     "hdr hdr hdr"
+    "tkr tkr tkr"
     "lft ctr rgt"
     "log log log";
 }
+
+/* ── Scrolling ticker bar ── */
+#ticker-bar{
+  grid-area:tkr;
+  background:#0a0e13;border-bottom:1px solid var(--border);
+  overflow:hidden;display:flex;align-items:center;
+  white-space:nowrap;position:relative;
+}
+#ticker-bar::before{
+  content:'';position:absolute;left:0;top:0;bottom:0;width:60px;
+  background:linear-gradient(to right,#0a0e13,transparent);z-index:2;pointer-events:none;
+}
+#ticker-bar::after{
+  content:'';position:absolute;right:0;top:0;bottom:0;width:60px;
+  background:linear-gradient(to left,#0a0e13,transparent);z-index:2;pointer-events:none;
+}
+#ticker-track{
+  display:inline-flex;gap:0;
+  animation:scroll-left 80s linear infinite;
+  will-change:transform;
+}
+#ticker-track:hover{animation-play-state:paused;}
+@keyframes scroll-left{
+  0%  {transform:translateX(0);}
+  100%{transform:translateX(-50%);}
+}
+.tk-item{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:0 14px;border-right:1px solid var(--border);
+  font-size:11px;cursor:pointer;white-space:nowrap;
+  transition:background .1s;
+}
+.tk-item:hover{background:var(--surf2);}
+.tk-sym{font-weight:600;color:var(--muted);font-size:10px;letter-spacing:.3px;}
+.tk-price{font-weight:700;color:var(--text);}
+.tk-chg{font-size:10px;}
+.tk-chg.up{color:var(--green);}
+.tk-chg.dn{color:var(--red);}
 
 /* ── Scrollbar ── */
 ::-webkit-scrollbar{width:5px;height:5px;}
@@ -299,6 +338,11 @@ tr:hover td{background:var(--surf2);}
   <div id="hdr-meta"></div>
 </header>
 
+<!-- ── Scrolling Ticker Bar ── -->
+<div id="ticker-bar">
+  <div id="ticker-track"><!-- populated by JS --></div>
+</div>
+
 <!-- ── Left Panel: Config + Controls ── -->
 <aside id="lft">
 
@@ -389,26 +433,40 @@ tr:hover td{background:var(--surf2);}
     <div class="card-t">MetaTrader5 Connection
       <span id="mt5-status-dot" class="mt5-dot" style="background:var(--border);"></span>
     </div>
-    <div style="font-size:10px;color:var(--muted);margin-bottom:6px;" id="mt5-status-text">
-      Not connected — using yfinance fallback for forex/metals data
+    <div style="font-size:10px;margin-bottom:6px;" id="mt5-status-text">
+      <span style="color:var(--orange);">●</span> yfinance fallback — forex data active
     </div>
+    <!-- Quick demo broker presets -->
+    <label>Demo Broker</label>
+    <select id="mt5-broker-preset" onchange="applyBrokerPreset(this.value)" style="margin-bottom:6px;">
+      <option value="">— Select broker template —</option>
+      <option value="icm-demo">IC Markets Demo (ICMarkets-Demo)</option>
+      <option value="xm-demo">XM Demo (XMGlobal-Demo 3)</option>
+      <option value="fp-demo">FP Markets Demo (FPMarkets-Demo)</option>
+      <option value="exness-demo">Exness Demo (Exness-Trial)</option>
+      <option value="pepperstone-demo">Pepperstone Demo (Pepperstone-Edge01)</option>
+      <option value="custom">Custom</option>
+    </select>
     <div class="form-row">
       <div><label>Login (account #)</label>
         <input id="mt5-login" type="number" placeholder="12345678"/>
       </div>
       <div><label>Server</label>
-        <input id="mt5-server" placeholder="ICMarkets-Demo01"/>
+        <input id="mt5-server" placeholder="ICMarkets-Demo"/>
       </div>
     </div>
     <label>Password</label>
     <input id="mt5-pass" type="password" placeholder="••••••••" style="margin-bottom:6px;"/>
     <div class="form-row">
-      <button class="btn btn-b btn-full" onclick="mt5Connect()" id="mt5-connect-btn">Connect MT5</button>
-      <button class="btn btn-m btn-full" onclick="mt5Disconnect()">Disconnect</button>
+      <button class="btn btn-b btn-full" onclick="mt5Connect()" id="mt5-connect-btn">▶ Connect MT5</button>
+      <button class="btn btn-m btn-full" onclick="mt5Disconnect()">■ Disconnect</button>
     </div>
-    <div style="font-size:10px;color:var(--muted);margin-top:4px;">
-      ⚠ MT5 live trading requires Windows + MT5 terminal open.<br>
-      On this system: yfinance data mode (signals &amp; backtesting only).
+    <div id="mt5-acct-info" style="display:none;font-size:11px;margin-top:6px;">
+      <div class="stats" id="mt5-acct-stats"></div>
+    </div>
+    <div style="font-size:10px;color:var(--muted);margin-top:6px;border-top:1px solid var(--border);padding-top:5px;">
+      ⚠ Live trading requires <b>Windows + MT5 terminal open</b>.<br>
+      Current mode: <span id="mt5-mode-label" style="color:var(--orange);">yfinance data only</span>
     </div>
   </div>
 
@@ -778,24 +836,126 @@ async function mt5Disconnect() {
   log('[MT5] Disconnected');
 }
 
+const BROKER_PRESETS = {
+  'icm-demo':        {server:'ICMarkets-Demo'},
+  'xm-demo':         {server:'XMGlobal-Demo 3'},
+  'fp-demo':         {server:'FPMarkets-Demo'},
+  'exness-demo':     {server:'Exness-Trial'},
+  'pepperstone-demo':{server:'Pepperstone-Edge01'},
+};
+
+function applyBrokerPreset(key) {
+  const p = BROKER_PRESETS[key];
+  if (p) $('mt5-server').value = p.server;
+}
+
 function updateMT5Status(data) {
-  const live = data.mode === 'live';
-  const dot  = $('mt5-status-dot');
-  const txt  = $('mt5-status-text');
+  const live  = data.mode === 'live';
+  const dot   = $('mt5-status-dot');
+  const txt   = $('mt5-status-text');
   const badge = $('mt5-mode-badge');
-  dot.style.background = live ? 'var(--green)' : data.mode === 'yfinance-fallback' ? 'var(--orange)' : 'var(--border)';
+  const lbl   = $('mt5-mode-label');
+
+  dot.style.background = live ? 'var(--green)' : 'var(--orange)';
+
   if (live) {
-    txt.innerHTML = `<span class="g">Live MT5</span>  ${data.server || ''}  ${data.currency || ''} ${fmtN(data.balance,2)}`;
-    badge.textContent = 'live';
-    badge.style.color = 'var(--green)';
-  } else if (data.mode === 'yfinance-fallback') {
-    txt.textContent = 'Data mode (yfinance) — connect MT5 on Windows for live trading';
-    badge.textContent = 'data';
-    badge.style.color = 'var(--orange)';
+    txt.innerHTML = `<span class="g">● Live MT5</span>  <span class="mu">${data.server||''}</span>`;
+    if (badge) { badge.textContent='live'; badge.style.color='var(--green)'; }
+    if (lbl)   { lbl.textContent='LIVE trading active'; lbl.style.color='var(--green)'; }
+    // Show account info
+    const info = $('mt5-acct-info');
+    const stats = $('mt5-acct-stats');
+    if (info && stats) {
+      info.style.display = '';
+      stats.innerHTML = `
+        <span class="sl">Balance</span>  <span class="sv g">${data.currency||''} ${fmtN(data.balance,2)}</span>
+        <span class="sl">Equity</span>   <span class="sv">${fmtN(data.equity,2)}</span>
+        <span class="sl">Leverage</span> <span class="sv">1:${data.leverage||0}</span>
+        <span class="sl">Company</span>  <span class="sv mu" style="font-size:10px;">${data.company||''}</span>
+      `;
+    }
   } else {
-    txt.textContent = 'Not connected';
-    badge.textContent = 'offline';
+    txt.innerHTML = `<span style="color:var(--orange);">● yfinance fallback</span> — forex/metals data active`;
+    if (badge) { badge.textContent='data'; badge.style.color='var(--orange)'; }
+    if (lbl)   { lbl.textContent='yfinance data only'; lbl.style.color='var(--orange)'; }
+    const info = $('mt5-acct-info');
+    if (info) info.style.display = 'none';
   }
+}
+
+// ── Scrolling Ticker Bar ──────────────────────────────────────────────────────
+const TICKER_SYMBOLS = [
+  // Indices
+  {sym:'US30',    label:'DJ30'},
+  {sym:'NAS100',  label:'NAS100'},
+  {sym:'SPX500',  label:'S&P500'},
+  {sym:'GER40',   label:'DAX'},
+  {sym:'UK100',   label:'FTSE'},
+  {sym:'JP225',   label:'Nikkei'},
+  // Metals
+  {sym:'XAUUSD',  label:'Gold'},
+  {sym:'XAGUSD',  label:'Silver'},
+  {sym:'XPTUSD',  label:'Platinum'},
+  // Energies
+  {sym:'USOIL',   label:'WTI Oil'},
+  {sym:'UKOIL',   label:'Brent'},
+  // Crypto
+  {sym:'BTCUSDT', label:'Bitcoin'},
+  {sym:'ETHUSDT', label:'Ethereum'},
+  {sym:'BNBUSDT', label:'BNB'},
+  {sym:'SOLUSDT', label:'Solana'},
+  {sym:'XRPUSDT', label:'Ripple'},
+  // FX Majors
+  {sym:'EURUSD',  label:'EUR/USD'},
+  {sym:'GBPUSD',  label:'GBP/USD'},
+  {sym:'USDJPY',  label:'USD/JPY'},
+  {sym:'XAUUSD',  label:'Gold'},   // duplicate for scroll continuity
+  {sym:'BTCUSDT', label:'Bitcoin'},
+];
+
+const tickerData = {};   // sym → {price, change}
+
+async function refreshTickerItem(item) {
+  try {
+    const r = await GET('/api/ticker/' + item.sym);
+    if (r.ok) {
+      tickerData[item.sym] = {price: r.data.price, change: r.data.change, label: item.label};
+    }
+  } catch(_) {}
+}
+
+function renderTickerBar() {
+  const items = Object.entries(tickerData).map(([sym, d]) => {
+    const chg = d.change ?? 0;
+    const cls = chg >= 0 ? 'up' : 'dn';
+    const sign = chg >= 0 ? '+' : '';
+    const dec = dp(d.price);
+    return `<div class="tk-item" onclick="pickSym('${sym}')" title="Click to trade ${sym}">
+      <span class="tk-sym">${d.label||sym}</span>
+      <span class="tk-price">${fmtN(d.price, dec)}</span>
+      <span class="tk-chg ${cls}">${sign}${chg.toFixed(2)}%</span>
+    </div>`;
+  }).join('');
+  // Duplicate for seamless infinite scroll
+  $('ticker-track').innerHTML = items + items;
+}
+
+async function initTickerBar() {
+  // Fetch all in parallel (throttled to avoid rate limits)
+  const unique = [...new Map(TICKER_SYMBOLS.map(i=>[i.sym,i])).values()];
+  for (const item of unique) {
+    await refreshTickerItem(item);
+    await new Promise(r => setTimeout(r, 120));  // stagger 120ms apart
+  }
+  renderTickerBar();
+  // Refresh every 60s
+  setInterval(async () => {
+    for (const item of unique) {
+      await refreshTickerItem(item);
+      await new Promise(r => setTimeout(r, 200));
+    }
+    renderTickerBar();
+  }, 60000);
 }
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
@@ -1389,6 +1549,9 @@ async function init() {
   // Check MT5 status on load
   const mt5r = await GET('/api/mt5/status');
   if (mt5r.ok) updateMT5Status(mt5r.data);
+
+  // Start scrolling ticker bar (non-blocking)
+  initTickerBar();
 
   // Refresh open orders every 30s
   setInterval(loadOpenOrders, 30000);
