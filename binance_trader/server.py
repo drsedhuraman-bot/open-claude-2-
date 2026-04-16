@@ -78,6 +78,18 @@ scalp_stats: dict = {
 scalp_trades: list[dict] = []
 _scalp_task:  asyncio.Task | None = None
 
+# ── Auto-optimize globals ──────────────────────────────────────────────────────
+
+_opt_task:    asyncio.Task | None = None
+_opt_cfg: dict = {
+    "enabled":       False,
+    "interval_secs": 3600,   # default: re-optimize every hour
+    "limit":         500,    # candles fetched
+    "equity":        1000.0,
+    "auto_apply":    True,
+}
+opt_history: list[dict] = []   # keep last 20 optimize runs
+
 
 # ── Lifecycle ──────────────────────────────────────────────────────────────────
 
@@ -108,17 +120,17 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 def _init_bot(symbol: str, interval: str, strategy: str) -> None:
     global bot
+    loop = asyncio.get_event_loop()
+
     def _on_trade(t: TradeRecord) -> None:
-        asyncio.run(_broadcast({
-            "type":   "trade",
-            "side":   t.side,
-            "symbol": t.symbol,
-            "price":  t.price,
-            "qty":    t.qty,
-            "reason": t.reason,
-            "pnl":    t.pnl_pct,
-            "time":   t.time.strftime("%H:%M:%S"),
-        }))
+        data = {
+            "type": "trade", "side": t.side, "symbol": t.symbol,
+            "price": t.price, "qty": t.qty, "reason": t.reason,
+            "pnl": t.pnl_pct, "time": t.time.strftime("%H:%M:%S"),
+        }
+        if loop.is_running():
+            loop.call_soon_threadsafe(lambda: asyncio.create_task(_broadcast(data)))
+
     bot = TradingBot(
         client=client, symbol=symbol, interval=interval,
         strategy_name=strategy, on_signal=_on_trade,
@@ -318,6 +330,105 @@ async def _scalp_loop() -> None:
             await _broadcast({"type": "log", "msg": f"[SCALP] Error: {e}"})
         await asyncio.sleep(scalp_cfg["scan_secs"])
     logger.info("Scalp auto-scan stopped")
+
+
+# ── Optimize engine ────────────────────────────────────────────────────────────
+
+async def _run_optimize(
+    symbol: str,
+    interval: str,
+    limit: int   = 500,
+    equity: float = 1000.0,
+    amount: float = 50.0,
+    auto_apply: bool = True,
+) -> dict:
+    """Run all 8 presets through ScalpBacktester, rank by composite score,
+    optionally apply the best preset and restart the scalp loop."""
+    global _scalp_task
+
+    from backtest import ScalpBacktester
+
+    await _broadcast({"type": "log", "msg": f"[OPT] Starting optimization  {symbol} {interval}  {limit} candles …"})
+
+    loop = asyncio.get_event_loop()
+
+    def _sync_optimize():
+        df = client.get_klines(symbol, interval, limit=limit)
+        rows = []
+        for preset_name in SCALP_PRESETS:
+            engine = ScalpEngine.from_preset(preset_name)
+            bt     = ScalpBacktester(engine=engine, initial_usdt=equity, trade_amount_usdt=amount)
+            r      = bt.run(df, symbol=symbol, interval=interval)
+            rows.append({
+                "preset":       preset_name,
+                "pnl_pct":      round(r.total_pnl_pct, 2),
+                "win_rate":     round(r.win_rate, 1),
+                "max_drawdown": round(r.max_drawdown_pct, 2),
+                "total_trades": r.total_trades,
+                "final_usdt":   round(r.final_usdt, 2),
+                "score":        bt.score(r),
+            })
+        rows.sort(key=lambda x: x["score"], reverse=True)
+        return rows
+
+    try:
+        results = await loop.run_in_executor(None, _sync_optimize)
+    except Exception as e:
+        logger.error("Optimize failed: %s", e)
+        await _broadcast({"type": "log", "msg": f"[OPT] Failed: {e}"})
+        return {}
+
+    best = results[0]["preset"]
+
+    if auto_apply and best != scalp_cfg["preset"]:
+        scalp_cfg["preset"] = best
+        # Restart scalp loop with new preset if it is running
+        if scalp_stats["running"]:
+            scalp_stats["running"] = False
+            if _scalp_task and not _scalp_task.done():
+                _scalp_task.cancel()
+            await asyncio.sleep(0.1)
+            scalp_stats["running"] = True
+            _scalp_task = asyncio.create_task(_scalp_loop())
+            await _broadcast({"type": "log", "msg": f"[OPT] Bot restarted with new preset: {best}"})
+
+    rec = {
+        "ts":      datetime.utcnow().strftime("%H:%M:%S"),
+        "symbol":  symbol,
+        "interval": interval,
+        "best":    best,
+        "results": results,
+    }
+    opt_history.append(rec)
+    if len(opt_history) > 20:
+        opt_history.pop(0)
+
+    top = results[0]
+    await _broadcast({"type": "log",
+        "msg": (f"[OPT] Best: <b>{best}</b>  PnL={top['pnl_pct']:+.1f}%  "
+                f"WR={top['win_rate']:.0f}%  DD={top['max_drawdown']:.1f}%  "
+                f"Trades={top['total_trades']}  Score={top['score']:.2f}")})
+    await _broadcast({"type": "optimize_result", "results": results, "best": best,
+                      "applied": auto_apply, "ts": rec["ts"]})
+    return rec
+
+
+async def _auto_optimize_loop() -> None:
+    """Periodic background task: re-optimize every N seconds."""
+    logger.info("Auto-optimize loop started  interval=%ds", _opt_cfg["interval_secs"])
+    while _opt_cfg["enabled"]:
+        await asyncio.sleep(_opt_cfg["interval_secs"])
+        if not _opt_cfg["enabled"] or not client:
+            break
+        await _run_optimize(
+            symbol    = scalp_cfg["symbol"],
+            interval  = scalp_cfg["interval"],
+            limit     = _opt_cfg["limit"],
+            equity    = _opt_cfg["equity"],
+            amount    = scalp_cfg["amount_usdt"],
+            auto_apply= _opt_cfg["auto_apply"],
+        )
+    logger.info("Auto-optimize loop stopped")
 
 
 # ── Pages ──────────────────────────────────────────────────────────────────────
@@ -617,6 +728,71 @@ async def scalp_close_position():
         return _ok({"order_id": order.order_id, "pnl_pct": round(pnl, 3)})
     except Exception as e:
         return _err(str(e))
+
+
+# ── Optimize ──────────────────────────────────────────────────────────────────
+
+@app.post("/api/scalp/optimize")
+async def scalp_optimize(body: dict):
+    """Run all 8 presets through ScalpBacktester, return ranked results."""
+    if not client:
+        return _err("Not connected")
+
+    symbol    = str(body.get("symbol",   scalp_cfg["symbol"])).upper()
+    interval  = str(body.get("interval", scalp_cfg["interval"]))
+    limit     = int(body.get("limit",    _opt_cfg["limit"]))
+    equity    = float(body.get("equity", _opt_cfg["equity"]))
+    amount    = float(body.get("amount_usdt", scalp_cfg["amount_usdt"]))
+    auto_apply= bool(body.get("auto_apply", True))
+
+    try:
+        rec = await _run_optimize(symbol, interval, limit, equity, amount, auto_apply)
+        return _ok(rec)
+    except Exception as e:
+        logger.exception("Optimize endpoint error")
+        return _err(str(e))
+
+
+@app.post("/api/scalp/auto-optimize/start")
+async def auto_optimize_start(body: dict):
+    global _opt_task
+    if not client:
+        return _err("Not connected")
+
+    _opt_cfg["enabled"]       = True
+    _opt_cfg["interval_secs"] = int(body.get("interval_secs", 3600))
+    _opt_cfg["limit"]         = int(body.get("limit",         500))
+    _opt_cfg["equity"]        = float(body.get("equity",      1000.0))
+    _opt_cfg["auto_apply"]    = bool(body.get("auto_apply",   True))
+
+    if _opt_task and not _opt_task.done():
+        _opt_task.cancel()
+
+    _opt_task = asyncio.create_task(_auto_optimize_loop())
+    await _broadcast({"type": "log",
+        "msg": f"[OPT] Auto-optimize enabled  every {_opt_cfg['interval_secs']}s"})
+    # Run once immediately
+    asyncio.create_task(_run_optimize(
+        scalp_cfg["symbol"], scalp_cfg["interval"],
+        _opt_cfg["limit"], _opt_cfg["equity"],
+        scalp_cfg["amount_usdt"], _opt_cfg["auto_apply"],
+    ))
+    return _ok(_opt_cfg)
+
+
+@app.post("/api/scalp/auto-optimize/stop")
+async def auto_optimize_stop():
+    global _opt_task
+    _opt_cfg["enabled"] = False
+    if _opt_task and not _opt_task.done():
+        _opt_task.cancel()
+    await _broadcast({"type": "log", "msg": "[OPT] Auto-optimize disabled"})
+    return _ok(_opt_cfg)
+
+
+@app.get("/api/scalp/optimize/history")
+def optimize_history():
+    return _ok(opt_history[-10:])
 
 
 # ── One-shot scalp analyze ─────────────────────────────────────────────────────

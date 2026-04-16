@@ -342,6 +342,163 @@ def run_backtest_menu(client: BinanceClient) -> None:
     print_backtest_result(result)
 
 
+# ── Scalp-specific backtester ──────────────────────────────────────────────────
+
+class ScalpBacktester:
+    """
+    Backtester for ScalpEngine using ATR-based stop / T1 / T2.
+
+    Strategy:
+      - Enter LONG on BUY signal from ScalpEngine.
+      - Stop at engine.stop price (hard stop).
+      - When T1 is hit → move stop to breakeven, keep riding to T2.
+      - Exit fully at T2 or on a new SELL signal.
+    Fee of 0.1% per side is included.
+    """
+
+    def __init__(
+        self,
+        engine,                          # ScalpEngine instance
+        initial_usdt: float    = 1000.0,
+        trade_amount_usdt: float = 50.0,
+        fee_pct: float         = 0.1,
+        min_candles: int       = 60,
+    ) -> None:
+        self.engine            = engine
+        self.initial_usdt      = initial_usdt
+        self.trade_amount_usdt = trade_amount_usdt
+        self.fee_pct           = fee_pct
+        self.min_candles       = min_candles
+
+    def run(self, df: pd.DataFrame, symbol: str = "UNKNOWN", interval: str = "?") -> BacktestResult:
+        from strategies.base import Signal
+
+        result = BacktestResult(
+            symbol     = symbol,
+            interval   = interval,
+            strategy   = f"scalp_pt{getattr(self.engine, 'pass_threshold', 6.0):.1f}",
+            start_date = df["open_time"].iloc[0],
+            end_date   = df["open_time"].iloc[-1],
+            initial_usdt = self.initial_usdt,
+            final_usdt   = self.initial_usdt,
+        )
+
+        equity      = self.initial_usdt
+        in_position = False
+        entry_price = 0.0
+        entry_qty   = 0.0
+        entry_time  = None
+        entry_reason = ""
+        stop_price  = 0.0
+        t1_price    = 0.0
+        t2_price    = 0.0
+        t1_hit      = False
+
+        for i in range(self.min_candles, len(df)):
+            window = df.iloc[: i + 1]
+            candle = df.iloc[i]
+            close  = float(candle["close"])
+            ts     = candle["open_time"]
+
+            # ── Check open position ────────────────────────────────────────
+            if in_position:
+                reason_out = None
+                exit_px    = close
+
+                if close <= stop_price:
+                    reason_out = "Stop Loss"
+                    exit_px    = stop_price
+                elif not t1_hit and t1_price and close >= t1_price:
+                    t1_hit     = True
+                    stop_price = entry_price          # trail to breakeven
+                elif t1_hit and t2_price and close >= t2_price:
+                    reason_out = "T2 Target"
+                    exit_px    = t2_price
+
+                if reason_out:
+                    trade, equity = self._close(
+                        entry_time, ts, entry_price, exit_px,
+                        entry_qty, equity, entry_reason, reason_out,
+                    )
+                    result.trades.append(trade)
+                    in_position = False
+                    t1_hit      = False
+                    continue
+
+            # ── Get signal ────────────────────────────────────────────────
+            try:
+                sr = self.engine.analyze(window)
+            except ValueError:
+                continue
+
+            if sr.signal == Signal.BUY and not in_position:
+                trade_usdt  = min(self.trade_amount_usdt, equity)
+                fee         = trade_usdt * self.fee_pct / 100
+                entry_qty   = (trade_usdt - fee) / close
+                entry_price = close
+                entry_time  = ts
+                entry_reason = f"LONG score={sr.bull_score:.1f}"
+                stop_price  = sr.stop if sr.stop > 0 else close * 0.99
+                t1_price    = sr.t1   if sr.t1   > 0 else close * 1.015
+                t2_price    = sr.t2   if sr.t2   > 0 else close * 1.03
+                t1_hit      = False
+                in_position = True
+
+            elif sr.signal == Signal.SELL and in_position:
+                trade, equity = self._close(
+                    entry_time, ts, entry_price, close,
+                    entry_qty, equity, entry_reason, "SELL signal",
+                )
+                result.trades.append(trade)
+                in_position = False
+                t1_hit      = False
+
+        # ── Close any open position at end ─────────────────────────────────
+        if in_position:
+            lc = float(df["close"].iloc[-1])
+            lt = df["open_time"].iloc[-1]
+            trade, equity = self._close(
+                entry_time, lt, entry_price, lc,
+                entry_qty, equity, entry_reason, "End of backtest",
+            )
+            result.trades.append(trade)
+
+        result.final_usdt = equity
+        return result
+
+    def _close(self, entry_time, exit_time, entry_price, exit_price,
+               qty, equity, reason_in, reason_out) -> tuple:
+        gross    = qty * exit_price
+        fee      = gross * self.fee_pct / 100
+        net      = gross - fee
+        pnl_usdt = net - (qty * entry_price)
+        pnl_pct  = (exit_price - entry_price) / entry_price * 100
+        new_eq   = equity + pnl_usdt
+        trade    = BacktestTrade(
+            entry_time  = entry_time,
+            exit_time   = exit_time,
+            side        = "LONG",
+            entry_price = entry_price,
+            exit_price  = exit_price,
+            qty         = qty,
+            pnl_pct     = pnl_pct,
+            pnl_usdt    = pnl_usdt,
+            reason_in   = reason_in,
+            reason_out  = reason_out,
+        )
+        return trade, new_eq
+
+    def score(self, r: BacktestResult) -> float:
+        """Composite score: (PnL / MaxDrawdown) × √trades.
+        Rewards high PnL relative to risk, scaled by statistical significance."""
+        import math
+        if r.total_trades < 2:
+            return -999.0
+        dd  = max(r.max_drawdown_pct, 0.5)
+        raw = (r.total_pnl_pct / dd) * math.sqrt(r.total_trades)
+        return round(raw, 4)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Backtest a trading strategy on Binance historical data")
     ap.add_argument("--symbol",   default=config.BOT_SYMBOL)

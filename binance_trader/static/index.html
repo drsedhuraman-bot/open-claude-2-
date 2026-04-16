@@ -219,6 +219,16 @@ tr:hover td{background:var(--surf2);}
 .bt-summary{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:12px;margin-bottom:10px;}
 .bt-label{color:var(--muted);}
 
+/* ── Optimize results ── */
+.opt-row{display:grid;grid-template-columns:90px 56px 46px 46px 42px 52px;gap:0 6px;
+  align-items:center;padding:4px 6px;border-radius:4px;font-size:11px;}
+.opt-row:hover{background:var(--surf2);}
+.opt-best{background:rgba(63,185,80,.08);border:1px solid rgba(63,185,80,.3);border-radius:4px;}
+.opt-bar-wrap{height:5px;border-radius:3px;background:var(--border);overflow:hidden;margin-top:2px;}
+.opt-bar-fill{height:100%;border-radius:3px;background:var(--green);transition:width .4s;}
+.opt-bar-fill.neg{background:var(--red);}
+.opt-hdr{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+
 /* ── Responsive ── */
 @media(max-width:900px){
   body{
@@ -251,6 +261,7 @@ tr:hover td{background:var(--surf2);}
   <!-- Quick actions -->
   <button class="btn btn-g" id="hdr-start" onclick="startScalpBot()" style="padding:4px 10px;font-size:11px;">▶ Start Bot</button>
   <button class="btn btn-r" id="hdr-stop"  onclick="stopScalpBot()"  style="padding:4px 10px;font-size:11px;" disabled>■ Stop</button>
+  <button class="btn btn-a" id="hdr-opt"   onclick="runOptimize()"   style="padding:4px 10px;font-size:11px;">⚡ Optimize</button>
   <button class="btn btn-m" onclick="openBacktest()"                  style="padding:4px 10px;font-size:11px;">Backtest</button>
   <button class="btn btn-m" onclick="openManualOrder()"               style="padding:4px 10px;font-size:11px;">Manual Order</button>
 
@@ -325,6 +336,31 @@ tr:hover td{background:var(--surf2);}
       <label for="c-autotrade">Auto-Trade (place real orders)</label>
       <input type="checkbox" id="c-autotrade" style="width:auto;cursor:pointer;"/>
     </div>
+    <div class="cb-row" style="margin-top:4px;">
+      <label for="c-autoopt">Auto-Optimize preset</label>
+      <input type="checkbox" id="c-autoopt" style="width:auto;cursor:pointer;" onchange="toggleAutoOpt(this.checked)"/>
+    </div>
+    <div id="autoopt-row" style="display:none;">
+      <label>Re-optimize every</label>
+      <select id="c-opt-interval" style="margin-bottom:4px;">
+        <option value="1800">30 min</option>
+        <option value="3600" selected>1 hour</option>
+        <option value="7200">2 hours</option>
+        <option value="14400">4 hours</option>
+        <option value="28800">8 hours</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Last optimize results -->
+  <div class="card" id="opt-results-card" style="display:none;">
+    <div class="card-t">Optimizer Results
+      <span id="opt-ts" style="font-size:10px;color:var(--muted);font-weight:400;text-transform:none;"></span>
+    </div>
+    <div class="opt-row opt-hdr" style="padding:2px 6px;">
+      <span>Preset</span><span>PnL%</span><span>WR%</span><span>DD%</span><span>Trd</span><span>Score</span>
+    </div>
+    <div id="opt-rows"></div>
   </div>
 
   <!-- Bot session stats -->
@@ -608,13 +644,14 @@ function connectWS() {
 
 function handleMsg(d) {
   switch (d.type) {
-    case 'ticker':        onTicker(d);         break;
-    case 'scalp_result':  onScalpResult(d);    break;
-    case 'scalp_trade':   onScalpTrade(d);     break;
-    case 'scalp_heartbeat': onHeartbeat(d);    break;
-    case 'bot_status':    onBotStatus(d);       break;
-    case 'trade':         onBotTrade(d);        break;
-    case 'log':           log(d.msg);           break;
+    case 'ticker':          onTicker(d);         break;
+    case 'scalp_result':    onScalpResult(d);    break;
+    case 'scalp_trade':     onScalpTrade(d);     break;
+    case 'scalp_heartbeat': onHeartbeat(d);      break;
+    case 'bot_status':      onBotStatus(d);      break;
+    case 'trade':           onBotTrade(d);       break;
+    case 'optimize_result': onOptimizeResult(d); break;
+    case 'log':             log(d.msg);          break;
   }
 }
 
@@ -856,6 +893,75 @@ async function stopScalpBot() {
   const r = await POST('/api/scalp/bot/stop', {});
   if (!r.ok) { log('Stop failed: '+r.error, 'r'); return; }
   log('[SCALP] Bot stopped');
+}
+
+// ── Optimize ──────────────────────────────────────────────────────────────────
+async function runOptimize() {
+  const btn = $('hdr-opt');
+  btn.disabled = true;
+  btn.textContent = '⏳ Optimizing…';
+  log('[OPT] Running preset optimization — this may take ~10s…', 'y');
+
+  const r = await POST('/api/scalp/optimize', {
+    symbol:      $('c-symbol').value.toUpperCase(),
+    interval:    $('c-interval').value,
+    amount_usdt: parseFloat($('c-amount').value) || 50,
+    auto_apply:  true,
+  });
+
+  btn.disabled = false;
+  btn.textContent = '⚡ Optimize';
+
+  if (!r.ok) { log('[OPT] Failed: ' + r.error, 'r'); return; }
+  // Results are broadcast via WS onOptimizeResult; but also shown here if WS is slow
+  if (r.data && r.data.results) renderOptimizeResults(r.data.results, r.data.best);
+}
+
+function onOptimizeResult(d) {
+  renderOptimizeResults(d.results, d.best);
+  if (d.applied && d.best) {
+    setPreset(d.best);
+    log(`[OPT] Applied best preset: <b class="y">${d.best}</b>`, 'g');
+  }
+}
+
+function renderOptimizeResults(results, best) {
+  $('opt-results-card').style.display = '';
+  $('opt-ts').textContent = new Date().toLocaleTimeString();
+
+  const maxScore = Math.max(...results.map(r => Math.abs(r.score)), 0.01);
+
+  $('opt-rows').innerHTML = results.map((r, i) => {
+    const isBest = r.preset === best;
+    const pnlCls = r.pnl_pct >= 0 ? 'g' : 'r';
+    const scorePct = Math.min(100, Math.abs(r.score) / maxScore * 100).toFixed(1);
+    const barCls = r.score >= 0 ? 'opt-bar-fill' : 'opt-bar-fill neg';
+    return `<div class="opt-row${isBest?' opt-best':''}" title="Score: ${r.score}">
+      <span class="${isBest?'y':''}"><b>${i===0?'🥇 ':i===1?'🥈 ':i===2?'🥉 ':''}${r.preset}</b></span>
+      <span class="${pnlCls}">${r.pnl_pct >= 0 ? '+' : ''}${r.pnl_pct}%</span>
+      <span>${r.win_rate}%</span>
+      <span class="r">${r.max_drawdown}%</span>
+      <span>${r.total_trades}</span>
+      <span class="${r.score>0?'g':'r'}">${r.score > 0 ? '+' : ''}${r.score.toFixed(2)}</span>
+      <div style="grid-column:1/-1;"><div class="opt-bar-wrap"><div class="${barCls}" style="width:${scorePct}%"></div></div></div>
+    </div>`;
+  }).join('');
+}
+
+async function toggleAutoOpt(enabled) {
+  $('autoopt-row').style.display = enabled ? '' : 'none';
+  if (enabled) {
+    const interval_secs = parseInt($('c-opt-interval').value) || 3600;
+    const r = await POST('/api/scalp/auto-optimize/start', {
+      interval_secs,
+      auto_apply: true,
+    });
+    if (!r.ok) { log('[OPT] Auto-optimize start failed: ' + r.error, 'r'); return; }
+    log(`[OPT] Auto-optimize enabled  every ${interval_secs/60|0}m`, 'g');
+  } else {
+    const r = await POST('/api/scalp/auto-optimize/stop', {});
+    if (r.ok) log('[OPT] Auto-optimize disabled');
+  }
 }
 
 async function closePosition() {
